@@ -82,10 +82,12 @@ class KyuubiBatchSubmitter:
             "args": args.split() if isinstance(args, str) and args else args or []
         }
         
-        # Add className only if provided
+        # Use default className for PySpark if not provided
         if classname:
             batch_config["className"] = classname
-        
+        else:
+            batch_config["className"] = "org.apache.spark.deploy.PythonRunner"
+
         # Handle conf - could be string (from CLI) or dict (from YAML)
         if isinstance(conf, str):
             conf_dict = self.parse_conf(conf)
@@ -323,6 +325,33 @@ def get_password(config, username):
     
     return password
 
+def normalize_queue(queue_name):
+    if not queue_name.startswith("root."):
+        return f"root.default.{queue_name}"
+    return queue_name
+
+def inject_yunikorn_spark_configs(config):
+    """Sets Spark configs for YuniKorn queue labels and user.info annotations."""
+    if 'sparkConf' not in config:
+        config['sparkConf'] = {}
+
+    queue = config.get("queue")
+    if queue:
+        queue = normalize_queue(queue)
+        logging.getLogger('kyuubi-submit').debug(f"Queue name after normalizing: {queue}")
+        # Set YuniKorn queue labels for driver and executor
+        config['sparkConf']["spark.kubernetes.driver.label.queue"] = queue
+        config['sparkConf']["spark.kubernetes.executor.label.queue"] = queue
+
+    # Setting YuniKorn user.info annotations
+    user_name = config.get("username")
+    if not user_name:
+        raise ValueError("Missing required config field: 'username'")
+    user_info = json.dumps({"user": user_name})
+
+    config['sparkConf']["spark.kubernetes.driver.annotation.yunikorn.apache.org/user.info"] = user_info
+    config['sparkConf']["spark.kubernetes.executor.annotation.yunikorn.apache.org/user.info"] = user_info
+
 def main():
     parser = argparse.ArgumentParser(
         description='Submit and monitor Kyuubi batch job',
@@ -336,6 +365,7 @@ def main():
     parser.add_argument('--resource', help='JAR or Python file path')
     parser.add_argument('--classname', help='Main class name (optional for PySpark)')
     parser.add_argument('--name', help='Job name')
+    parser.add_argument('--queue', help='Optional YuniKorn queue name to submit the job into')
     parser.add_argument('--args', help='Space-separated arguments or list in YAML')
     parser.add_argument('--conf', help='Comma-separated Spark configs or dict in YAML')
     parser.add_argument('--pyfiles', help='Comma-separated Python files or list in YAML')
@@ -356,7 +386,7 @@ def main():
     
     # Merge configurations
     config = merge_configs(yaml_config, args)
-    
+
     # Validate required fields
     required_fields = ['server', 'username', 'resource', 'name']
     missing_fields = [field for field in required_fields if field not in config or not config[field]]
@@ -364,7 +394,10 @@ def main():
         print(f"Error: Missing required fields: {', '.join(missing_fields)}")
         print("These must be provided either in the config file or as command-line arguments")
         sys.exit(1)
-    
+
+    # Inject YuniKorn spark configs
+    inject_yunikorn_spark_configs(config)
+
     # Setup logger
     logger = setup_logger(config.get('debug', False))
     
