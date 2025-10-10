@@ -112,6 +112,7 @@ python kyuubi_submit.py --config-file job-config.yaml
 | `--resource` | Yes | Path to JAR or Python file | `s3a://bucket/app.jar` |
 | `--classname` | No* | Main class name (*required for JAR files) | `com.example.MainClass` |
 | `--name` | Yes | Job name | `"Production ETL Job"` |
+| `--queue` | No | Queue name | `"YuniKorn queue name to submit the job into"` |
 | `--args` | No | Space-separated job arguments | `"input.csv output.parquet"` |
 | `--conf` | No | Comma-separated Spark configurations | `"spark.executor.memory=4g,spark.executor.instances=10"` |
 | `--pyfiles` | No | Comma-separated Python dependencies | `"utils.py,libs.zip"` |
@@ -212,6 +213,7 @@ python kyuubi_submit.py \
   --resource s3a://bucket/main-app.jar \
   --classname com.company.analytics.MainJob \
   --name "Analytics-Pipeline" \
+  --queue "analytics" \
   --args "--date 2024-01-01 --mode production" \
   --jars "s3a://bucket/lib/postgres-driver.jar,s3a://bucket/lib/custom-udfs.jar" \
   --conf "spark.executor.memory=16g,spark.executor.instances=50,spark.sql.adaptive.enabled=true" \
@@ -226,6 +228,7 @@ server: https://kyuubi.example.com
 username: data-scientist@company.com
 resource: s3a://ml-bucket/train_model.py
 name: ML-Model-Training
+queue: analytics
 
 args:
   - --model-type
