@@ -325,11 +325,6 @@ def get_password(config, username):
     
     return password
 
-def normalize_queue(queue_name):
-    if not queue_name.startswith("root."):
-        return f"root.default.{queue_name}"
-    return queue_name
-
 def inject_yunikorn_spark_configs(config):
     """Sets Spark configs for YuniKorn queue labels and user.info annotations."""
     if 'sparkConf' not in config:
@@ -337,8 +332,7 @@ def inject_yunikorn_spark_configs(config):
 
     queue = config.get("queue")
     if queue:
-        queue = normalize_queue(queue)
-        logging.getLogger('kyuubi-submit').debug(f"Queue name after normalizing: {queue}")
+        logging.getLogger('kyuubi-submit').debug(f"Queue name: {queue}")
         # Set YuniKorn queue labels for driver and executor
         config['sparkConf']["spark.kubernetes.driver.label.queue"] = queue
         config['sparkConf']["spark.kubernetes.executor.label.queue"] = queue
