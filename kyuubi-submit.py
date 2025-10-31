@@ -343,15 +343,6 @@ def inject_yunikorn_spark_configs(config):
         config['sparkConf']["spark.kubernetes.driver.label.queue"] = queue
         config['sparkConf']["spark.kubernetes.executor.label.queue"] = queue
 
-    # Setting YuniKorn user.info annotations
-    user_name = config.get("username")
-    if not user_name:
-        raise ValueError("Missing required config field: 'username'")
-    user_info = json.dumps({"user": user_name})
-
-    config['sparkConf']["spark.kubernetes.driver.annotation.yunikorn.apache.org/user.info"] = user_info
-    config['sparkConf']["spark.kubernetes.executor.annotation.yunikorn.apache.org/user.info"] = user_info
-
 def main():
     parser = argparse.ArgumentParser(
         description='Submit and monitor Kyuubi batch job',
