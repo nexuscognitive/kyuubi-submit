@@ -79,7 +79,7 @@ class KyuubiBatchSubmitter:
             "batchType": "SPARK",
             "resource": resource,
             "name": name,
-            "args": args.split() if isinstance(args, str) and args else args or []
+            "args": args.split(',') if isinstance(args, str) and args else args or []
         }
         
         # Use default className for PySpark if not provided
