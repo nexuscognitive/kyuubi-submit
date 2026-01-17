@@ -9,7 +9,7 @@ import logging
 import sys
 import yaml
 import os
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 from datetime import datetime
 
 # Disable SSL warnings
@@ -35,6 +35,10 @@ def setup_logger(debug=False):
     return logging.getLogger('kyuubi-submit')
 
 class KyuubiBatchSubmitter:
+    # Known remote URI schemes that don't need uploading
+    REMOTE_SCHEMES = {'hdfs', 's3', 's3a', 's3n', 'gs', 'wasb', 'wasbs', 'abfs', 'abfss', 
+                      'http', 'https', 'ftp', 'kyuubi_upload', 'local'}
+    
     def __init__(self, server, username, password, logger, history_server=None):
         self.server = server
         self.username = username
@@ -44,6 +48,98 @@ class KyuubiBatchSubmitter:
         self.session = requests.Session()
         self.session.auth = (username, password)
         self.session.verify = False  # Disable SSL verification
+        
+    def is_local_file(self, path):
+        """
+        Determine if a path refers to a local file that needs uploading.
+        Returns True for local files, False for remote URIs.
+        """
+        if not path:
+            return False
+        
+        # Parse the path to check for URI scheme
+        parsed = urlparse(path)
+        
+        # If it has a known remote scheme, it's not local
+        if parsed.scheme and parsed.scheme.lower() in self.REMOTE_SCHEMES:
+            return False
+        
+        # If it has a scheme we don't recognize, treat it as remote
+        if parsed.scheme and len(parsed.scheme) > 1:  # len > 1 to exclude Windows drive letters
+            self.logger.debug(f"Unknown scheme '{parsed.scheme}' for path '{path}', treating as remote")
+            return False
+        
+        # Check if the file exists locally
+        # Handle both absolute and relative paths
+        expanded_path = os.path.expanduser(os.path.expandvars(path))
+        if os.path.isfile(expanded_path):
+            return True
+        
+        # If file doesn't exist locally, assume it's a remote path without scheme
+        # This handles cases like "/path/on/hdfs" that might be HDFS paths
+        self.logger.debug(f"Path '{path}' not found locally, treating as remote")
+        return False
+    
+    def upload_file(self, local_path):
+        """
+        Upload a local file to Kyuubi and return the kyuubi_upload:// URI.
+        """
+        url = urljoin(self.server, "/api/v1/batches/upload")
+        expanded_path = os.path.expanduser(os.path.expandvars(local_path))
+        
+        self.logger.info(f"Uploading local file: {expanded_path}")
+        
+        if not os.path.isfile(expanded_path):
+            raise FileNotFoundError(f"Local file not found: {expanded_path}")
+        
+        file_size = os.path.getsize(expanded_path)
+        self.logger.debug(f"File size: {file_size} bytes")
+        
+        filename = os.path.basename(expanded_path)
+        
+        with open(expanded_path, 'rb') as f:
+            files = {'file': (filename, f)}
+            response = self.session.post(url, files=files)
+        
+        if response.status_code not in [200, 201]:
+            self.logger.error(f"Upload failed: {response.status_code}")
+            self.logger.error(response.text)
+            raise Exception(f"Failed to upload file '{local_path}': {response.status_code} - {response.text}")
+        
+        result = response.json()
+        uploaded_uri = result.get('resource') or result.get('uri') or result.get('path')
+        
+        if not uploaded_uri:
+            self.logger.debug(f"Upload response: {result}")
+            raise Exception(f"Upload succeeded but no resource URI returned. Response: {result}")
+        
+        self.logger.info(f"Uploaded successfully: {uploaded_uri}")
+        return uploaded_uri
+    
+    def resolve_path(self, path):
+        """
+        Resolve a path - upload if local, return as-is if remote.
+        Returns the URI to use in the batch submission.
+        """
+        if self.is_local_file(path):
+            return self.upload_file(path)
+        return path
+    
+    def resolve_paths_list(self, paths):
+        """
+        Resolve a list of paths, uploading local files as needed.
+        Returns list of resolved URIs.
+        """
+        if not paths:
+            return None
+        
+        resolved = []
+        for path in paths:
+            path = path.strip()
+            if path:
+                resolved.append(self.resolve_path(path))
+        
+        return resolved if resolved else None
         
     def parse_conf(self, conf_string):
         """Parse comma-separated key=value pairs into a dictionary"""
@@ -74,10 +170,32 @@ class KyuubiBatchSubmitter:
         """Submit a batch job to Kyuubi"""
         url = urljoin(self.server, "/api/v1/batches")
         
+        # Resolve main resource (upload if local)
+        self.logger.info("Resolving resource paths...")
+        resolved_resource = self.resolve_path(resource)
+        
+        # Resolve pyFiles (upload any local files)
+        resolved_py_files = None
+        if py_files:
+            if isinstance(py_files, str):
+                py_files_list = [f.strip() for f in py_files.split(',')]
+            else:
+                py_files_list = py_files
+            resolved_py_files = self.resolve_paths_list(py_files_list)
+        
+        # Resolve jars (upload any local files)
+        resolved_jars = None
+        if jars:
+            if isinstance(jars, str):
+                jars_list = [j.strip() for j in jars.split(',')]
+            else:
+                jars_list = jars
+            resolved_jars = self.resolve_paths_list(jars_list)
+        
         # Build batch configuration
         batch_config = {
             "batchType": "SPARK",
-            "resource": resource,
+            "resource": resolved_resource,
             "name": name,
             "args": args.split(',') if isinstance(args, str) and args else args or []
         }
@@ -98,19 +216,13 @@ class KyuubiBatchSubmitter:
         conf_dict["spark.submit.deployMode"] = "cluster"
         batch_config["conf"] = conf_dict
         
-        # Add pyFiles if provided
-        if py_files:
-            if isinstance(py_files, str):
-                batch_config["pyFiles"] = [f.strip() for f in py_files.split(',')]
-            elif isinstance(py_files, list):
-                batch_config["pyFiles"] = py_files
+        # Add resolved pyFiles if provided
+        if resolved_py_files:
+            batch_config["pyFiles"] = resolved_py_files
         
-        # Add jars if provided
-        if jars:
-            if isinstance(jars, str):
-                batch_config["jars"] = [j.strip() for j in jars.split(',')]
-            elif isinstance(jars, list):
-                batch_config["jars"] = jars
+        # Add resolved jars if provided
+        if resolved_jars:
+            batch_config["jars"] = resolved_jars
         
         self.logger.info(f"Submitting job: {name}")
         self.logger.debug(f"Batch config: {json.dumps(batch_config, indent=2)}")
@@ -353,14 +465,14 @@ def main():
     parser.add_argument('--history-server', help='Spark History Server URL (e.g., spark-history.example.com or http://spark-history.example.com:18080)')
     parser.add_argument('--username', help='Username')
     parser.add_argument('--password', help='Password (will check KYUUBI_SUBMIT_PASSWORD env var, then prompt if not provided)')
-    parser.add_argument('--resource', help='JAR or Python file path')
+    parser.add_argument('--resource', help='JAR or Python file path (local files will be auto-uploaded)')
     parser.add_argument('--classname', help='Main class name (optional for PySpark)')
     parser.add_argument('--name', help='Job name')
     parser.add_argument('--queue', help='Optional YuniKorn queue name to submit the job into')
     parser.add_argument('--args', help='Space-separated arguments or list in YAML')
     parser.add_argument('--conf', help='Comma-separated Spark configs or dict in YAML')
-    parser.add_argument('--pyfiles', help='Comma-separated Python files or list in YAML')
-    parser.add_argument('--jars', help='Comma-separated JAR files or list in YAML')
+    parser.add_argument('--pyfiles', help='Comma-separated Python files or list in YAML (local files will be auto-uploaded)')
+    parser.add_argument('--jars', help='Comma-separated JAR files or list in YAML (local files will be auto-uploaded)')
     parser.add_argument('--show-logs', action='store_true', help='Display job logs after completion')
     parser.add_argument('--debug', action='store_true', help='Enable debug logging')
     
