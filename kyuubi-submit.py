@@ -39,6 +39,9 @@ class KyuubiBatchSubmitter:
     REMOTE_SCHEMES = {'hdfs', 's3', 's3a', 's3n', 'gs', 'wasb', 'wasbs', 'abfs', 'abfss', 
                       'http', 'https', 'ftp', 'local'}
     
+    # Python file extensions
+    PYTHON_EXTENSIONS = {'.py', '.zip', '.egg'}
+    
     def __init__(self, server, username, password, logger, history_server=None):
         self.server = server
         self.username = username
@@ -81,6 +84,19 @@ class KyuubiBatchSubmitter:
     def expand_path(self, path):
         """Expand user home and environment variables in path."""
         return os.path.expanduser(os.path.expandvars(path))
+    
+    def get_file_extension(self, path):
+        """Get lowercase file extension from path or URI."""
+        # Handle URIs by extracting the path component
+        parsed = urlparse(path)
+        if parsed.scheme:
+            path = parsed.path
+        return os.path.splitext(path)[1].lower()
+    
+    def is_python_resource(self, resource):
+        """Determine if the resource is a Python file based on extension."""
+        ext = self.get_file_extension(resource)
+        return ext in self.PYTHON_EXTENSIONS
     
     def parse_conf(self, conf_string):
         """Parse comma-separated key=value pairs into a dictionary"""
@@ -130,6 +146,11 @@ class KyuubiBatchSubmitter:
         """Submit a batch job to Kyuubi using multipart form data if local files present."""
         url = urljoin(self.server, "/api/v1/batches")
         
+        # Determine batch type based on resource extension
+        is_pyspark = self.is_python_resource(resource)
+        batch_type = "pyspark" if is_pyspark else "spark"
+        self.logger.info(f"Detected batch type: {batch_type}")
+        
         # Determine if main resource is local
         resource_is_local = self.is_local_file(resource)
         resource_expanded = self.expand_path(resource) if resource_is_local else None
@@ -157,7 +178,7 @@ class KyuubiBatchSubmitter:
         
         # Build batch request object
         batch_request = {
-            "batchType": "SPARK",
+            "batchType": batch_type,
             "name": name,
             "args": args.split(',') if isinstance(args, str) and args else args or []
         }
@@ -166,11 +187,9 @@ class KyuubiBatchSubmitter:
         if not resource_is_local:
             batch_request["resource"] = resource
         
-        # Set className
-        if classname:
+        # Set className only for JARs (not for PySpark)
+        if classname and not is_pyspark:
             batch_request["className"] = classname
-        else:
-            batch_request["className"] = "org.apache.spark.deploy.PythonRunner"
 
         # Handle conf
         if isinstance(conf, str):
@@ -187,19 +206,6 @@ class KyuubiBatchSubmitter:
         # Add remote jars to batch request
         if remote_jars:
             batch_request["jars"] = remote_jars
-        
-        # Build extraResourcesMap for local extra files (pyFiles, jars)
-        # This maps config keys to uploaded file references
-        extra_resources_map = {}
-        if local_py_files:
-            # Files will be uploaded and bound to spark.submit.pyFiles
-            extra_resources_map["spark.submit.pyFiles"] = [os.path.basename(f[1]) for f in local_py_files]
-        if local_jars:
-            # Files will be uploaded and bound to spark.jars
-            extra_resources_map["spark.jars"] = [os.path.basename(f[1]) for f in local_jars]
-        
-        if extra_resources_map:
-            batch_request["extraResourcesMap"] = extra_resources_map
         
         self.logger.info(f"Submitting job: {name}")
         
@@ -456,10 +462,10 @@ def main():
     parser.add_argument('--username', help='Username')
     parser.add_argument('--password', help='Password (will check KYUUBI_SUBMIT_PASSWORD env var, then prompt if not provided)')
     parser.add_argument('--resource', help='JAR or Python file path (local files will be auto-uploaded)')
-    parser.add_argument('--classname', help='Main class name (optional for PySpark)')
+    parser.add_argument('--classname', help='Main class name (for JAR files only, ignored for PySpark)')
     parser.add_argument('--name', help='Job name')
     parser.add_argument('--queue', help='Optional YuniKorn queue name to submit the job into')
-    parser.add_argument('--args', help='Space-separated arguments or list in YAML')
+    parser.add_argument('--args', help='Comma-separated arguments or list in YAML')
     parser.add_argument('--conf', help='Comma-separated Spark configs or dict in YAML')
     parser.add_argument('--pyfiles', help='Comma-separated Python files (local files will be auto-uploaded)')
     parser.add_argument('--jars', help='Comma-separated JAR files (local files will be auto-uploaded)')
