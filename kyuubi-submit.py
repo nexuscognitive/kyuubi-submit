@@ -180,7 +180,7 @@ class KyuubiBatchSubmitter:
         batch_request = {
             "batchType": batch_type,
             "name": name,
-            "args": args.split(',') if isinstance(args, str) and args else args or []
+            "args": args.split() if isinstance(args, str) and args else args or []
         }
         
         # Only set resource in JSON if it's remote
