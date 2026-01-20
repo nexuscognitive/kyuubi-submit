@@ -197,15 +197,16 @@ class KyuubiBatchSubmitter:
         else:
             conf_dict = conf or {}
         conf_dict["spark.submit.deployMode"] = "cluster"
-        batch_request["conf"] = conf_dict
         
-        # Add remote pyFiles to batch request
+        # Add remote pyFiles to conf (works for both JSON and multipart submissions)
         if remote_py_files:
-            batch_request["pyFiles"] = remote_py_files
+            conf_dict["spark.submit.pyFiles"] = ",".join(remote_py_files)
         
-        # Add remote jars to batch request
+        # Add remote jars to conf (works for both JSON and multipart submissions)
         if remote_jars:
-            batch_request["jars"] = remote_jars
+            conf_dict["spark.jars"] = ",".join(remote_jars)
+        
+        batch_request["conf"] = conf_dict
         
         self.logger.info(f"Submitting job: {name}")
         
