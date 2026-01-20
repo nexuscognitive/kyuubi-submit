@@ -248,6 +248,24 @@ class KyuubiBatchSubmitter:
         if resource_file:
             batch_request["resource"] = "placeholder"
         
+        # Build extraResourcesMap to tell Kyuubi which Spark config key to bind
+        # each uploaded extra file to.
+        # Format: {spark_config_key: "filename1,filename2,..."}
+        # Kyuubi will APPEND the uploaded file paths to any existing conf value.
+        extra_resources_map = {}
+        
+        if local_py_files:
+            pyfile_names = [os.path.basename(expanded) for _, expanded in local_py_files]
+            extra_resources_map["spark.submit.pyFiles"] = ",".join(pyfile_names)
+            
+        if local_jars:
+            jar_names = [os.path.basename(expanded) for _, expanded in local_jars]
+            extra_resources_map["spark.jars"] = ",".join(jar_names)
+        
+        if extra_resources_map:
+            batch_request["extraResourcesMap"] = extra_resources_map
+            self.logger.info(f"Extra resources map: {extra_resources_map}")
+        
         self.logger.debug(f"Batch request: {json.dumps(batch_request, indent=2)}")
         
         # Build multipart form data
@@ -270,20 +288,24 @@ class KyuubiBatchSubmitter:
                 )
             
             # Add extra resource files (pyFiles and jars)
+            # The form field name must be the filename, as Kyuubi looks up files by name:
+            # formDataMultiPart.getField(fileName)
             for original_path, expanded_path in local_py_files:
+                filename = os.path.basename(expanded_path)
                 self.logger.info(f"Uploading pyFile: {expanded_path}")
                 f = open(expanded_path, 'rb')
                 opened_files.append(f)
                 files.append(
-                    ('extraResourceFiles', (os.path.basename(expanded_path), f, 'application/octet-stream'))
+                    (filename, (filename, f, 'application/octet-stream'))
                 )
             
             for original_path, expanded_path in local_jars:
+                filename = os.path.basename(expanded_path)
                 self.logger.info(f"Uploading jar: {expanded_path}")
                 f = open(expanded_path, 'rb')
                 opened_files.append(f)
                 files.append(
-                    ('extraResourceFiles', (os.path.basename(expanded_path), f, 'application/octet-stream'))
+                    (filename, (filename, f, 'application/octet-stream'))
                 )
             
             # Send multipart request
