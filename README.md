@@ -143,15 +143,6 @@ In this example:
 - `config.json` → uploaded to Kyuubi
 - `s3a://bucket/data.csv` → passed to Spark as-is
 
-### Important Notes for `--files`
-
-> ⚠️ **Kyuubi versions before 1.10.x with the filename fix**: Uploaded files are renamed with a timestamp suffix (e.g., `config.json` becomes `config-20260121144955-1.json`). This breaks `SparkFiles.get("config.json")`.
-> 
-> **Workarounds:**
-> 1. Upload files to S3/HDFS first and use remote URIs
-> 2. Use a patched Kyuubi server that preserves original filenames
-> 3. In your Spark code, search for files by prefix pattern
-
 ## Configuration
 
 ### Command Line Options
