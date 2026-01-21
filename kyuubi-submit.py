@@ -142,7 +142,7 @@ class KyuubiBatchSubmitter:
         
         return local_files, remote_uris
         
-    def submit_batch(self, resource, classname, name, args, conf, py_files, jars):
+    def submit_batch(self, resource, classname, name, args, conf, py_files, jars, files=None):
         """Submit a batch job to Kyuubi using multipart form data if local files present."""
         url = urljoin(self.server, "/api/v1/batches")
         
@@ -170,11 +170,19 @@ class KyuubiBatchSubmitter:
             else:
                 jars_list = [j for j in jars if j]
         
+        files_list = []
+        if files:
+            if isinstance(files, str):
+                files_list = [f.strip() for f in files.split(',') if f.strip()]
+            else:
+                files_list = [f for f in files if f]
+        
         local_py_files, remote_py_files = self.classify_paths(py_files_list)
         local_jars, remote_jars = self.classify_paths(jars_list)
+        local_files, remote_files = self.classify_paths(files_list)
         
         # Check if we need multipart upload
-        has_local_files = resource_is_local or local_py_files or local_jars
+        has_local_files = resource_is_local or local_py_files or local_jars or local_files
         
         # Build batch request object
         batch_request = {
@@ -206,13 +214,17 @@ class KyuubiBatchSubmitter:
         if remote_jars:
             conf_dict["spark.jars"] = ",".join(remote_jars)
         
+        # Add remote files to conf (works for both JSON and multipart submissions)
+        if remote_files:
+            conf_dict["spark.files"] = ",".join(remote_files)
+        
         batch_request["conf"] = conf_dict
         
         self.logger.info(f"Submitting job: {name}")
         
         if has_local_files:
             self.logger.info("Detected local files - using multipart upload")
-            response = self._submit_multipart(url, batch_request, resource_expanded, local_py_files, local_jars)
+            response = self._submit_multipart(url, batch_request, resource_expanded, local_py_files, local_jars, local_files)
         else:
             self.logger.info("All resources are remote - using JSON submission")
             response = self._submit_json(url, batch_request)
@@ -234,7 +246,7 @@ class KyuubiBatchSubmitter:
             json=batch_request
         )
     
-    def _submit_multipart(self, url, batch_request, resource_file, local_py_files, local_jars):
+    def _submit_multipart(self, url, batch_request, resource_file, local_py_files, local_jars, local_files):
         """Submit batch using multipart form data with file uploads."""
         
         # WORKAROUND: Kyuubi has a validation bug where it checks 
@@ -262,6 +274,10 @@ class KyuubiBatchSubmitter:
             jar_names = [os.path.basename(expanded) for _, expanded in local_jars]
             extra_resources_map["spark.jars"] = ",".join(jar_names)
         
+        if local_files:
+            file_names = [os.path.basename(expanded) for _, expanded in local_files]
+            extra_resources_map["spark.files"] = ",".join(file_names)
+        
         if extra_resources_map:
             batch_request["extraResourcesMap"] = extra_resources_map
             self.logger.info(f"Extra resources map: {extra_resources_map}")
@@ -287,7 +303,7 @@ class KyuubiBatchSubmitter:
                     ('resourceFile', (os.path.basename(resource_file), f, 'application/octet-stream'))
                 )
             
-            # Add extra resource files (pyFiles and jars)
+            # Add extra resource files (pyFiles, jars, and files)
             # The form field name must be the filename, as Kyuubi looks up files by name:
             # formDataMultiPart.getField(fileName)
             for original_path, expanded_path in local_py_files:
@@ -302,6 +318,15 @@ class KyuubiBatchSubmitter:
             for original_path, expanded_path in local_jars:
                 filename = os.path.basename(expanded_path)
                 self.logger.info(f"Uploading jar: {expanded_path}")
+                f = open(expanded_path, 'rb')
+                opened_files.append(f)
+                files.append(
+                    (filename, (filename, f, 'application/octet-stream'))
+                )
+            
+            for original_path, expanded_path in local_files:
+                filename = os.path.basename(expanded_path)
+                self.logger.info(f"Uploading file: {expanded_path}")
                 f = open(expanded_path, 'rb')
                 opened_files.append(f)
                 files.append(
@@ -504,6 +529,7 @@ def main():
     parser.add_argument('--conf', help='Comma-separated Spark configs or dict in YAML')
     parser.add_argument('--pyfiles', help='Comma-separated Python files (local files will be auto-uploaded)')
     parser.add_argument('--jars', help='Comma-separated JAR files (local files will be auto-uploaded)')
+    parser.add_argument('--files', help='Comma-separated files to distribute (local files will be auto-uploaded)')
     parser.add_argument('--show-logs', action='store_true', help='Display job logs after completion')
     parser.add_argument('--debug', action='store_true', help='Enable debug logging')
     
@@ -549,7 +575,8 @@ def main():
             config.get('args', ''),
             config.get('conf', ''),
             config.get('pyfiles'),
-            config.get('jars')
+            config.get('jars'),
+            config.get('files')
         )
         logger.info(f"Batch submitted successfully! ID: {batch_id}")
         
