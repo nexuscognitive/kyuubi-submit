@@ -9,6 +9,7 @@ import logging
 import sys
 import yaml
 import os
+import signal
 from urllib.parse import urljoin, urlparse
 from datetime import datetime
 
@@ -342,6 +343,19 @@ class KyuubiBatchSubmitter:
             for f in opened_files:
                 f.close()
     
+    def cancel_batch(self, batch_id):
+        """Cancel a batch job"""
+        url = urljoin(self.server, f"/api/v1/batches/{batch_id}")
+        self.logger.info(f"Cancelling batch {batch_id}...")
+        response = self.session.delete(url)
+        if response.status_code in [200, 204]:
+            self.logger.info(f"Batch {batch_id} cancelled successfully")
+            return True
+        else:
+            self.logger.error(f"Error cancelling batch: {response.status_code}")
+            self.logger.error(response.text)
+            return False
+    
     def get_batch_status(self, batch_id):
         """Get batch status"""
         url = urljoin(self.server, f"/api/v1/batches/{batch_id}")
@@ -511,7 +525,23 @@ def inject_yunikorn_spark_configs(config):
         config['sparkConf']["spark.kubernetes.executor.label.queue"] = queue
 
 
+# Global variables for signal handling
+_submitter = None
+_batch_id = None
+
+
+def _signal_handler(signum, frame):
+    """Handle interrupt signals by cancelling the batch job"""
+    global _submitter, _batch_id
+    print()  # New line after any spinner output
+    if _submitter and _batch_id:
+        _submitter.cancel_batch(_batch_id)
+    sys.exit(130)  # 128 + SIGINT(2)
+
+
 def main():
+    global _submitter, _batch_id
+    
     parser = argparse.ArgumentParser(
         description='Submit and monitor Kyuubi batch job',
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
@@ -567,6 +597,13 @@ def main():
         config.get('history_server')
     )
     
+    # Store submitter globally for signal handler
+    _submitter = submitter
+    
+    # Register signal handlers
+    signal.signal(signal.SIGINT, _signal_handler)
+    signal.signal(signal.SIGTERM, _signal_handler)
+    
     try:
         batch_id = submitter.submit_batch(
             config['resource'],
@@ -579,6 +616,9 @@ def main():
             config.get('files')
         )
         logger.info(f"Batch submitted successfully! ID: {batch_id}")
+        
+        # Store batch_id globally for signal handler
+        _batch_id = batch_id
         
         final_state = submitter.monitor_job(batch_id, show_logs=config.get('show_logs', False))
         
