@@ -3,6 +3,7 @@
 A Python CLI tool for submitting and monitoring Apache Kyuubi batch jobs with support for **local file uploads**, Spark, and PySpark applications.
 
 ## Table of Contents
+
 - [Features](#features)
 - [Installation](#installation)
 - [Quick Start](#quick-start)
@@ -27,6 +28,7 @@ A Python CLI tool for submitting and monitoring Apache Kyuubi batch jobs with su
 - ✅ **Real-time job monitoring** with status updates and progress spinner
 - ✅ **Automatic log retrieval** upon job completion
 - ✅ **YAML configuration support** for reusable job configurations
+- ✅ **Unix-style quoted argument support** via `shlex` parsing for parameters containing spaces or quotes
 - ✅ **Flexible authentication** with password from CLI, YAML, environment variable, or interactive prompt
 - ✅ **Spark History Server integration** with formatted URLs
 - ✅ **YuniKorn queue support** for Kubernetes deployments
@@ -53,6 +55,7 @@ pip install -r requirements.txt
 ```
 
 **requirements.txt:**
+
 ```txt
 requests>=2.28.0
 pyyaml>=5.4.1
@@ -118,6 +121,7 @@ The tool automatically detects and uploads local files to the Kyuubi server. Thi
 ### Supported Remote Schemes
 
 The following URI schemes are recognized as remote (not uploaded):
+
 - `hdfs://`, `s3://`, `s3a://`, `s3n://`
 - `gs://` (Google Cloud Storage)
 - `wasb://`, `wasbs://`, `abfs://`, `abfss://` (Azure)
@@ -137,6 +141,7 @@ python kyuubi_submit.py \
 ```
 
 In this example:
+
 - `my-app.jar` → uploaded to Kyuubi
 - `local-lib.jar` → uploaded to Kyuubi
 - `s3a://bucket/remote-lib.jar` → passed to Spark as-is
@@ -147,24 +152,24 @@ In this example:
 
 ### Command Line Options
 
-| Option | Required | Description |
-|--------|----------|-------------|
-| `--server` | Yes | Kyuubi server URL |
-| `--username` | Yes | Authentication username |
-| `--password` | No | Password (or use env var / prompt) |
-| `--resource` | Yes | JAR or Python file (local or remote) |
-| `--classname` | No* | Main class (*required for JARs) |
-| `--name` | Yes | Job name |
-| `--args` | No | Job arguments (space-separated) |
-| `--conf` | No | Spark configs (comma-separated `key=value`) |
-| `--jars` | No | Additional JARs (comma-separated, local or remote) |
-| `--pyfiles` | No | Python dependencies (comma-separated, local or remote) |
-| `--files` | No | Files to distribute (comma-separated, local or remote) |
-| `--queue` | No | YuniKorn queue name |
-| `--history-server` | No | Spark History Server URL |
-| `--show-logs` | No | Display logs after completion |
-| `--debug` | No | Enable debug logging |
-| `--config-file` | No | YAML configuration file |
+| Option             | Required | Description                                            |
+| ------------------ | -------- | ------------------------------------------------------ |
+| `--server`         | Yes      | Kyuubi server URL                                      |
+| `--username`       | Yes      | Authentication username                                |
+| `--password`       | No       | Password (or use env var / prompt)                     |
+| `--resource`       | Yes      | JAR or Python file (local or remote)                   |
+| `--classname`      | No\*     | Main class (\*required for JARs)                       |
+| `--name`           | Yes      | Job name                                               |
+| `--args`           | No       | Job arguments (shell-style, supports quoted strings)   |
+| `--conf`           | No       | Spark configs (comma-separated `key=value`)            |
+| `--jars`           | No       | Additional JARs (comma-separated, local or remote)     |
+| `--pyfiles`        | No       | Python dependencies (comma-separated, local or remote) |
+| `--files`          | No       | Files to distribute (comma-separated, local or remote) |
+| `--queue`          | No       | YuniKorn queue name                                    |
+| `--history-server` | No       | Spark History Server URL                               |
+| `--show-logs`      | No       | Display logs after completion                          |
+| `--debug`          | No       | Enable debug logging                                   |
+| `--config-file`    | No       | YAML configuration file                                |
 
 ### YAML Configuration
 
@@ -179,6 +184,7 @@ resource: ./my-app.jar
 classname: com.example.MainClass
 name: My-Batch-Job
 
+# args supports shell-style quoting (e.g., values with spaces)
 args: "--input data.csv --output results/"
 
 jars:
@@ -189,7 +195,7 @@ pyfiles:
   - ./utils.py
 
 files:
-  - s3a://bucket/config.json  # Remote recommended for files
+  - s3a://bucket/config.json # Remote recommended for files
 
 conf:
   spark.executor.memory: 4g
@@ -216,8 +222,8 @@ python kyuubi_submit.py --config-file job-config.yaml --conf "spark.executor.mem
 
 ### Environment Variables
 
-| Variable | Description |
-|----------|-------------|
+| Variable                 | Description                         |
+| ------------------------ | ----------------------------------- |
 | `KYUUBI_SUBMIT_PASSWORD` | Default password for authentication |
 
 ## Usage Examples
@@ -246,7 +252,7 @@ python kyuubi_submit.py \
   --classname com.company.ETLJob \
   --name "Daily-ETL" \
   --jars "./jdbc-driver.jar,s3a://libs/avro-tools.jar" \
-  --args "--date 2024-01-15 --env production" \
+  --args "--date 2024-01-15 --env production" \ # quoted args supported via shlex
   --queue etl-queue
 ```
 
@@ -310,12 +316,12 @@ INFO - Spark History URL: http://spark-history.example.com:18080/history/applica
 
 ### Exit Codes
 
-| Code | Description |
-|------|-------------|
-| 0 | Success |
-| 1 | Job failed / Error |
-| 2 | Job cancelled |
-| 3 | Unexpected state |
+| Code | Description        |
+| ---- | ------------------ |
+| 0    | Success            |
+| 1    | Job failed / Error |
+| 2    | Job cancelled      |
+| 3    | Unexpected state   |
 
 ### Debug Mode
 
@@ -326,6 +332,7 @@ python kyuubi_submit.py --debug ...
 ```
 
 This shows:
+
 - Full batch request JSON
 - File upload details
 - API responses
