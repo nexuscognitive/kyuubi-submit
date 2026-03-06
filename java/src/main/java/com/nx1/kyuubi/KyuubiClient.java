@@ -108,13 +108,13 @@ public class KyuubiClient implements Closeable {
         if (hasLocalFiles) {
             log.info("Detected local files — using multipart upload");
             File resourceFile = resourceIsLocal ? new File(resourceResolved) : null;
-            batchId = rest.submitMultipart(
+            batchId = parseBatchId(rest.submitMultipart(
                     request,
                     resourceFile,
                     pyClassified.localFiles,
                     jarClassified.localFiles,
                     fileClassified.localFiles
-            );
+            ));
         } else {
             log.info("All resources are remote — using JSON submission");
             batchId = parseBatchId(rest.submitJson(request));

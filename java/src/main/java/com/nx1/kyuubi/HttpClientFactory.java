@@ -2,7 +2,7 @@ package com.nx1.kyuubi;
 
 import com.nx1.kyuubi.model.KyuubiClientConfig;
 import org.apache.http.auth.AuthScope;
-import org.apache.http.auth.CredentialsProvider;
+import org.apache.http.client.CredentialsProvider;
 import org.apache.http.auth.UsernamePasswordCredentials;
 import org.apache.http.conn.ssl.NoopHostnameVerifier;
 import org.apache.http.conn.ssl.SSLConnectionSocketFactory;

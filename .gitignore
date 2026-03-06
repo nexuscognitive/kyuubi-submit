@@ -1,0 +1,15 @@
+# Java
+java/target/
+*.class
+
+# Python
+__pycache__/
+*.pyc
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.settings/
+.classpath
+.project
