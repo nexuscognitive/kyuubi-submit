@@ -143,3 +143,17 @@ SubmitOptions opts = SubmitOptions.builder()
 | `pyFile(String)` / `pyFiles(List)` | Python deps (local or remote) |
 | `jar(String)` / `jars(List)` | JAR deps (local or remote) |
 | `file(String)` / `files(List)` | Files to distribute (local or remote) |
+
+---
+
+## Integration Test
+
+`KyuubiClientIT` submits a real PySpark job to a live Kyuubi instance. It is skipped by default and only runs when the required environment variables are set.
+
+```bash
+cd java
+KYUUBI_SERVER_URL=https://kyuubi.example.com \
+KYUUBI_USERNAME=your-username \
+KYUUBI_PASSWORD=your-password \
+mvn verify -Dit.test=KyuubiClientIT
+```

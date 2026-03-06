@@ -69,7 +69,8 @@ class KyuubiClientTest {
         }
 
         wm.verify(postRequestedFor(urlEqualTo("/api/v1/batches"))
-                .withHeader("Content-Type", containing("application/json")));
+                .withHeader("Content-Type", containing("application/json"))
+                .withBasicAuth(new com.github.tomakehurst.wiremock.client.BasicCredentials("test", "test")));
     }
 
     // ── submit (multipart path) ────────────────────────────────────────────────

@@ -52,7 +52,7 @@ class KyuubiRestClient implements Closeable {
     /**
      * Submit a batch using a plain JSON body (no local file uploads).
      *
-     * @return the new batch ID
+     * @return the raw JSON response body
      */
     String submitJson(BatchRequest request) throws IOException {
         String url  = baseUrl + "/api/v1/batches";
@@ -74,7 +74,7 @@ class KyuubiRestClient implements Closeable {
      * @param localPyFiles    local Python dependency files
      * @param localJars       local JAR dependency files
      * @param localFiles      local distribution files
-     * @return the new batch ID
+     * @return the raw JSON response body
      */
     String submitMultipart(
             BatchRequest request,

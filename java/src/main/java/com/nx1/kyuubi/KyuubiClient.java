@@ -171,9 +171,11 @@ public class KyuubiClient implements Closeable {
 
                 if (appId != null && !appId.isBlank()) {
                     log.info("Spark App ID: {}", appId);
-                    String historyUrl = formatHistoryUrl(appId, status.getAppUrl());
+                    String historyUrl = formatHistoryUrl(appId);
                     if (historyUrl != null) {
                         log.info("Spark History URL: {}", historyUrl);
+                    } else if (status.getAppUrl() != null && !status.getAppUrl().isBlank()) {
+                        log.info("Spark UI URL: {}", status.getAppUrl());
                     }
                 }
 
@@ -333,7 +335,7 @@ public class KyuubiClient implements Closeable {
     }
 
     private String parseBatchId(String responseBody) throws IOException {
-        // submitJson returns the raw response body; we need to extract "id"
+        // Extract the batch ID from the raw JSON response body
         try {
             Map<?, ?> map = new com.fasterxml.jackson.databind.ObjectMapper()
                     .readValue(responseBody, Map.class);
@@ -364,19 +366,18 @@ public class KyuubiClient implements Closeable {
         log.info("Retrieved {} log lines", printed);
     }
 
-    private String formatHistoryUrl(String appId, String appUrl) {
+    private String formatHistoryUrl(String appId) {
         String historyBase = config.getHistoryServerUrl();
-        if (historyBase != null && !historyBase.isBlank() && appId != null && !appId.isBlank()) {
-            historyBase = historyBase.replaceAll("/+$", "");
-            if (!historyBase.startsWith("http://") && !historyBase.startsWith("https://")) {
-                historyBase = "http://" + historyBase;
-            }
-            // Append default port if none specified
-            if (!historyBase.matches(".*:\\d+$")) {
-                historyBase = historyBase + ":18080";
-            }
-            return historyBase + "/history/" + appId + "/";
+        if (historyBase == null || historyBase.isBlank() || appId == null || appId.isBlank()) {
+            return null;
         }
-        return appUrl;
+        historyBase = historyBase.replaceAll("/+$", "");
+        if (!historyBase.startsWith("http://") && !historyBase.startsWith("https://")) {
+            historyBase = "http://" + historyBase;
+        }
+        if (!historyBase.matches(".*:\\d+$")) {
+            historyBase = historyBase + ":18080";
+        }
+        return historyBase + "/history/" + appId + "/";
     }
 }
