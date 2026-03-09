@@ -26,6 +26,8 @@
         <slf4j.version>2.0.7</slf4j.version>
 
         <!-- Test -->
+        <skip.unit.tests>false</skip.unit.tests>
+        <surefire.version>3.2.3</surefire.version>
         <junit.version>5.10.1</junit.version>
         <mockito.version>5.7.0</mockito.version>
         <wiremock.version>3.3.1</wiremock.version>
@@ -131,7 +133,25 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
-                <version>3.2.3</version>
+                <version>${surefire.version}</version>
+                <configuration>
+                    <skipTests>${skip.unit.tests}</skipTests>
+                </configuration>
+            </plugin>
+
+            <!-- Failsafe: runs integration tests (*IT.java) during the verify phase -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-failsafe-plugin</artifactId>
+                <version>${surefire.version}</version>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>integration-test</goal>
+                            <goal>verify</goal>
+                        </goals>
+                    </execution>
+                </executions>
             </plugin>
 
             <!-- Shade plugin: produces a fat-jar that includes httpmime
