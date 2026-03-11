@@ -100,15 +100,25 @@ class KyuubiBatchSubmitter:
         ext = self.get_file_extension(resource)
         return ext in self.PYTHON_EXTENSIONS
     
-    def parse_conf(self, conf_string):
-        """Parse comma-separated key=value pairs into a dictionary"""
+    def parse_conf(self, conf):
+        """Parse Spark configs into a dictionary.
+        Accepts: a list of 'key=value' strings, or a single comma-separated string.
+        """
         conf_dict = {}
-        if conf_string:
-            for item in conf_string.split(','):
-                item = item.strip()
-                if '=' in item:
-                    key, value = item.split('=', 1)
-                    conf_dict[key.strip()] = value.strip()
+        if not conf:
+            return conf_dict
+        items = []
+        if isinstance(conf, list):
+            # Each element may itself be comma-separated
+            for entry in conf:
+                items.extend(entry.split(','))
+        else:
+            items = conf.split(',')
+        for item in items:
+            item = item.strip()
+            if '=' in item:
+                key, value = item.split('=', 1)
+                conf_dict[key.strip()] = value.strip()
         return conf_dict
     
     def format_history_url(self, app_id):
@@ -202,10 +212,10 @@ class KyuubiBatchSubmitter:
             batch_request["className"] = classname
 
         # Handle conf
-        if isinstance(conf, str):
+        if conf:
             conf_dict = self.parse_conf(conf)
         else:
-            conf_dict = conf or {}
+            conf_dict = {}
         conf_dict["spark.submit.deployMode"] = "cluster"
         
         # Add remote pyFiles to conf (works for both JSON and multipart submissions)
@@ -557,7 +567,7 @@ def main():
     parser.add_argument('--name', help='Job name')
     parser.add_argument('--queue', help='Optional YuniKorn queue name to submit the job into')
     parser.add_argument('--args', help='Comma-separated arguments or list in YAML')
-    parser.add_argument('--conf', help='Comma-separated Spark configs or dict in YAML')
+    parser.add_argument('--conf', action='append', help='Spark config key=value (can be repeated, e.g. --conf k1=v1 --conf k2=v2)')
     parser.add_argument('--pyfiles', help='Comma-separated Python files (local files will be auto-uploaded)')
     parser.add_argument('--jars', help='Comma-separated JAR files (local files will be auto-uploaded)')
     parser.add_argument('--files', help='Comma-separated files to distribute (local files will be auto-uploaded)')
