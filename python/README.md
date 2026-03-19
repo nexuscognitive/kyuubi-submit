@@ -45,7 +45,7 @@ A Python CLI tool for submitting and monitoring Apache Kyuubi batch jobs with su
 ### Install Dependencies
 
 ```bash
-pip install requests pyyaml urllib3
+pip install requests pyyaml urllib3 pyjks
 ```
 
 Or using requirements.txt:
@@ -60,6 +60,7 @@ pip install -r requirements.txt
 requests>=2.28.0
 pyyaml>=5.4.1
 urllib3>=1.26.0
+pyjks>=20.0.0
 ```
 
 ### Make Script Executable
@@ -156,7 +157,8 @@ In this example:
 | ------------------ | -------- | ------------------------------------------------------ |
 | `--server`         | Yes      | Kyuubi server URL                                      |
 | `--username`       | Yes      | Authentication username                                |
-| `--password`       | No       | Password (or use env var / prompt)                     |
+| `--password`       | No       | Password (or use env var / prompt). Takes priority over `--token` |
+| `--token`          | No       | Bearer token for authentication (alternative to password) |
 | `--resource`       | Yes      | JAR or Python file (local or remote)                   |
 | `--classname`      | No\*     | Main class (\*required for JARs)                       |
 | `--name`           | Yes      | Job name                                               |
@@ -222,9 +224,10 @@ python kyuubi_submit.py --config-file job-config.yaml --conf "spark.executor.mem
 
 ### Environment Variables
 
-| Variable                 | Description                         |
-| ------------------------ | ----------------------------------- |
-| `KYUUBI_SUBMIT_PASSWORD` | Default password for authentication |
+| Variable                 | Description                                           |
+| ------------------------ | ----------------------------------------------------- |
+| `KYUUBI_SUBMIT_PASSWORD` | Default password for authentication                   |
+| `KYUUBI_SUBMIT_TOKEN`    | Default Bearer token for authentication               |
 
 ## Usage Examples
 
@@ -270,7 +273,11 @@ python kyuubi_submit.py \
 
 The queue name is automatically normalized (e.g., `analytics-team` → `root.default.analytics-team`) and applied as Kubernetes labels for YuniKorn scheduling.
 
-## Password Management
+## Authentication
+
+The tool supports two authentication methods: **Basic Auth** (username/password) and **Bearer Token**. If both are provided, password takes priority.
+
+### Password Authentication
 
 Password resolution order (first match wins):
 
@@ -278,6 +285,53 @@ Password resolution order (first match wins):
 2. **YAML config**: `password: mypass`
 3. **Environment variable**: `export KYUUBI_SUBMIT_PASSWORD='mypass'`
 4. **Interactive prompt**: Secure input (recommended)
+
+### JCEKS Keystore Support
+
+If the password value is a path to a `.jceks` file, the tool automatically extracts the actual password from the keystore. The keystore is opened with the store password `"none"`, and the username is used as the alias to look up the secret key.
+
+```bash
+python kyuubi_submit.py \
+  --server https://kyuubi.example.com \
+  --username svc-spark \
+  --password /etc/security/credentials.jceks \
+  --resource s3a://bucket/job.py \
+  --name "My-Job"
+```
+
+```yaml
+# In YAML config
+username: svc-spark
+password: /etc/security/credentials.jceks
+```
+
+Requires the `pyjks` package: `pip install pyjks`
+
+### Bearer Token Authentication
+
+Use a Bearer token instead of username/password:
+
+```bash
+python kyuubi_submit.py \
+  --server https://kyuubi.example.com \
+  --username svc-spark \
+  --token "eyJhbGciOiJSUzI1NiIs..." \
+  --resource s3a://bucket/job.py \
+  --name "My-Job"
+```
+
+Token can also be set via environment variable:
+
+```bash
+export KYUUBI_SUBMIT_TOKEN='eyJhbGciOiJSUzI1NiIs...'
+```
+
+Or in YAML config:
+
+```yaml
+username: svc-spark
+token: eyJhbGciOiJSUzI1NiIs...
+```
 
 ## Spark History Server Integration
 

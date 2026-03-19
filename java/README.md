@@ -37,12 +37,20 @@ This produces two JARs under `target/`:
 import com.nx1.kyuubi.KyuubiClient;
 import com.nx1.kyuubi.model.*;
 
+// Using password authentication
 KyuubiClientConfig cfg = KyuubiClientConfig.builder()
     .serverUrl("https://kyuubi.internal:10099")
     .username("svc-spark")
     .password(System.getenv("KYUUBI_PASSWORD"))
     .historyServerUrl("http://spark-history:18080") // optional
     .pollIntervalMs(15_000)
+    .build();
+
+// Or using Bearer token authentication
+KyuubiClientConfig cfg = KyuubiClientConfig.builder()
+    .serverUrl("https://kyuubi.internal:10099")
+    .username("svc-spark")
+    .token(System.getenv("KYUUBI_TOKEN"))
     .build();
 
 SubmitOptions opts = SubmitOptions.builder()
@@ -123,13 +131,16 @@ SubmitOptions opts = SubmitOptions.builder()
 | Method | Default | Description |
 |---|---|---|
 | `serverUrl(String)` | required | Kyuubi REST base URL |
-| `username(String)` | required | Basic-auth username |
-| `password(String)` | required | Basic-auth password |
+| `username(String)` | required | Username |
+| `password(String)` | one required | Basic-auth password. Takes priority over token. Supports JCEKS keystore paths. |
+| `token(String)` | one required | Bearer token for authentication. Used when password is not set. |
 | `historyServerUrl(String)` | null | Spark History Server URL |
 | `pollIntervalMs(long)` | 10 000 | Status poll interval |
 | `connectTimeoutMs(int)` | 30 000 | HTTP connect timeout |
 | `socketTimeoutMs(int)` | 60 000 | HTTP read timeout |
 | `disableSslVerification()` | false | Skip TLS cert check (**dev only**) |
+
+> **JCEKS Keystore:** If the `password` value is a path to a `.jceks` file, the library automatically extracts the actual password from the keystore using the username as the alias and `"none"` as the store password.
 
 ### `SubmitOptions`
 

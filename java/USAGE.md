@@ -80,20 +80,44 @@ across multiple submissions — it is thread-safe.
 import com.nx1.kyuubi.KyuubiClient;
 import com.nx1.kyuubi.model.KyuubiClientConfig;
 
+// Option A: Password authentication
 KyuubiClientConfig config = KyuubiClientConfig.builder()
     .serverUrl("https://kyuubi.internal:10099")       // required
     .username("svc-spark")                            // required
-    .password(System.getenv("KYUUBI_PASSWORD"))       // required
+    .password(System.getenv("KYUUBI_PASSWORD"))       // password or token required
     .historyServerUrl("http://spark-history:18080")   // optional, for log URLs
     .pollIntervalMs(15_000)                           // default: 10 000 ms
     .connectTimeoutMs(30_000)                         // default: 30 000 ms
     .socketTimeoutMs(120_000)                         // default: 60 000 ms
     .build();
 
+// Option B: Bearer token authentication
+KyuubiClientConfig config = KyuubiClientConfig.builder()
+    .serverUrl("https://kyuubi.internal:10099")
+    .username("svc-spark")
+    .token(System.getenv("KYUUBI_TOKEN"))
+    .build();
+
 // KyuubiClient is Closeable — always use try-with-resources
 try (KyuubiClient client = new KyuubiClient(config)) {
     // submit jobs here
 }
+```
+
+> **Authentication priority:** If both `password` and `token` are set, password takes priority.
+
+### JCEKS Keystore Password
+
+If the `password` value is a path to a `.jceks` file on the local filesystem, the library
+automatically extracts the actual password from the keystore. The keystore is opened with
+the store password `"none"`, and the `username` is used as the alias.
+
+```java
+KyuubiClientConfig config = KyuubiClientConfig.builder()
+    .serverUrl("https://kyuubi.internal:10099")
+    .username("svc-spark")     // also used as the JCEKS alias
+    .password("/etc/security/credentials.jceks")
+    .build();
 ```
 
 To skip TLS certificate verification in dev/test environments:
@@ -103,7 +127,7 @@ KyuubiClientConfig config = KyuubiClientConfig.builder()
     .serverUrl("https://kyuubi-dev:10099")
     .username("admin")
     .password("admin")
-    .disableSslVerification()   // ⚠️  never use in production
+    .disableSslVerification()   // never use in production
     .build();
 ```
 
@@ -613,8 +637,9 @@ System.out.println("Diagnostics: " + status.getAppDiagnostic());
 | Method | Type | Default | Description |
 |---|---|---|---|
 | `serverUrl(String)` | required | — | Kyuubi REST base URL |
-| `username(String)` | required | — | Basic-auth username |
-| `password(String)` | required | — | Basic-auth password |
+| `username(String)` | required | — | Username (also used as JCEKS alias when applicable) |
+| `password(String)` | one required | — | Password for Basic auth. Takes priority over `token`. Supports JCEKS keystore paths (auto-detected by `.jceks` extension). |
+| `token(String)` | one required | — | Bearer token for authentication. Used when `password` is not set. |
 | `historyServerUrl(String)` | optional | `null` | Spark History Server base URL. When set, log links are formatted as `<url>/history/<appId>/` |
 | `pollIntervalMs(long)` | optional | `10000` | How long to wait between status polls (ms) |
 | `connectTimeoutMs(int)` | optional | `30000` | HTTP connect timeout (ms) |

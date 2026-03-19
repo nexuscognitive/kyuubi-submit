@@ -44,14 +44,17 @@ class KyuubiBatchSubmitter:
     # Python file extensions
     PYTHON_EXTENSIONS = {'.py', '.zip', '.egg'}
     
-    def __init__(self, server, username, password, logger, history_server=None):
+    def __init__(self, server, username, password, logger, history_server=None, token=None):
         self.server = server
         self.username = username
         self.password = password
         self.logger = logger
         self.history_server = history_server
         self.session = requests.Session()
-        self.session.auth = (username, password)
+        if password:
+            self.session.auth = (username, password)
+        elif token:
+            self.session.headers["Authorization"] = f"Bearer {token}"
         self.session.verify = False  # Disable SSL verification
         
     def is_local_file(self, path):
@@ -506,8 +509,26 @@ def merge_configs(yaml_config, cli_args):
     return merged
 
 
+def extract_password_from_jceks(jceks_path, alias):
+    """Extract a password from a JCEKS keystore file using the alias as lookup key."""
+    import jks
+    logger = logging.getLogger('kyuubi-submit')
+    logger.debug(f"Loading JCEKS keystore from {jceks_path} with alias '{alias}'")
+    keystore = jks.KeyStore.load(jceks_path, "none")
+    entry = keystore.secret_keys.get(alias)
+    if entry is None:
+        raise ValueError(f"Alias '{alias}' not found in JCEKS keystore '{jceks_path}'. "
+                         f"Available aliases: {list(keystore.secret_keys.keys())}")
+    return entry.key.decode('utf-8')
+
+
 def get_password(config, username):
-    """Get password from config, environment variable, or prompt"""
+    """Get password from config, environment variable, or prompt.
+
+    If the password value is a path to a .jceks file, the actual password
+    is extracted from the keystore using pyjks. The alias used for lookup
+    is the username, and the keystore password is None.
+    """
     password = config.get('password')
     if not password:
         password = os.environ.get('KYUUBI_SUBMIT_PASSWORD')
@@ -515,6 +536,8 @@ def get_password(config, username):
             logging.getLogger('kyuubi-submit').debug("Using password from KYUUBI_SUBMIT_PASSWORD environment variable")
     if not password:
         password = getpass.getpass(f"Password for {username}: ")
+    if password and password.endswith('.jceks') and os.path.isfile(password):
+        password = extract_password_from_jceks(password, username)
     return password
 
 
@@ -562,6 +585,7 @@ def main():
     parser.add_argument('--history-server', help='Spark History Server URL')
     parser.add_argument('--username', help='Username')
     parser.add_argument('--password', help='Password (will check KYUUBI_SUBMIT_PASSWORD env var, then prompt if not provided)')
+    parser.add_argument('--token', help='Bearer token for authentication (if both --password and --token are provided, password takes priority)')
     parser.add_argument('--resource', help='JAR or Python file path (local files will be auto-uploaded)')
     parser.add_argument('--classname', help='Main class name (for JAR files only, ignored for PySpark)')
     parser.add_argument('--name', help='Job name')
@@ -598,14 +622,22 @@ def main():
     if args.config_file:
         logger.info(f"Loaded configuration from: {args.config_file}")
     
-    password = get_password(config, config['username'])
-    
+    token = config.get('token') or os.environ.get('KYUUBI_SUBMIT_TOKEN')
+    password = config.get('password') or os.environ.get('KYUUBI_SUBMIT_PASSWORD')
+
+    if password:
+        password = get_password(config, config['username'])
+    elif not token:
+        # Neither password nor token provided — prompt for password
+        password = getpass.getpass(f"Password for {config['username']}: ")
+
     submitter = KyuubiBatchSubmitter(
-        config['server'], 
-        config['username'], 
-        password, 
+        config['server'],
+        config['username'],
+        password,
         logger,
-        config.get('history_server')
+        config.get('history_server'),
+        token=token if not password else None
     )
     
     # Store submitter globally for signal handler

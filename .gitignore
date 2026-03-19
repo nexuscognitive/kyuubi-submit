@@ -1,10 +1,19 @@
 # Java
 java/target/
 *.class
+*.jar
+*.war
 
 # Python
 __pycache__/
 *.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+*.egg
 
 # IDE
 .idea/
@@ -13,3 +22,15 @@ __pycache__/
 .settings/
 .classpath
 .project
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+.metals/

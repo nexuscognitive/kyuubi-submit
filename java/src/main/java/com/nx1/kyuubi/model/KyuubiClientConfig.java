@@ -20,6 +20,7 @@ public final class KyuubiClientConfig {
     private final String serverUrl;
     private final String username;
     private final String password;
+    private final String token;
     private final String historyServerUrl;
 
     /** Polling interval in milliseconds while waiting for job completion. */
@@ -37,7 +38,11 @@ public final class KyuubiClientConfig {
     private KyuubiClientConfig(Builder b) {
         this.serverUrl               = Objects.requireNonNull(b.serverUrl,  "serverUrl must not be null");
         this.username                = Objects.requireNonNull(b.username,   "username must not be null");
-        this.password                = Objects.requireNonNull(b.password,   "password must not be null");
+        if (b.password == null && b.token == null) {
+            throw new NullPointerException("Either password or token must be provided");
+        }
+        this.password                = b.password;
+        this.token                   = b.token;
         this.historyServerUrl        = b.historyServerUrl;
         this.pollIntervalMs          = b.pollIntervalMs;
         this.connectTimeoutMs        = b.connectTimeoutMs;
@@ -48,6 +53,7 @@ public final class KyuubiClientConfig {
     public String getServerUrl()            { return serverUrl; }
     public String getUsername()             { return username; }
     public String getPassword()             { return password; }
+    public String getToken()               { return token; }
     public String getHistoryServerUrl()     { return historyServerUrl; }
     public long   getPollIntervalMs()       { return pollIntervalMs; }
     public int    getConnectTimeoutMs()     { return connectTimeoutMs; }
@@ -63,6 +69,7 @@ public final class KyuubiClientConfig {
         private String  serverUrl;
         private String  username;
         private String  password;
+        private String  token;
         private String  historyServerUrl        = null;
         private long    pollIntervalMs          = 10_000L;
         private int     connectTimeoutMs        = 30_000;
@@ -82,6 +89,12 @@ public final class KyuubiClientConfig {
 
         public Builder password(String password) {
             this.password = password;
+            return this;
+        }
+
+        /** Bearer token for authentication. If both password and token are set, password takes priority. */
+        public Builder token(String token) {
+            this.token = token;
             return this;
         }
 

@@ -159,6 +159,67 @@ class KyuubiClientTest {
         }
     }
 
+    // ── Token auth ───────────────────────────────────────────────────────────────
+
+    @Test
+    void submitWithTokenUsesBearerHeader() throws Exception {
+        wm.stubFor(post(urlEqualTo("/api/v1/batches"))
+                .willReturn(aResponse()
+                        .withStatus(201)
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("{\"id\":\"batch-token\",\"batchType\":\"PYSPARK\",\"state\":\"PENDING\"}")));
+
+        KyuubiClientConfig cfg = KyuubiClientConfig.builder()
+                .serverUrl("http://localhost:" + wm.port())
+                .username("test")
+                .token("my-bearer-token")
+                .pollIntervalMs(50)
+                .build();
+
+        SubmitOptions opts = SubmitOptions.builder()
+                .resource("s3a://bucket/job.py")
+                .name("token-job")
+                .build();
+
+        try (KyuubiClient client = new KyuubiClient(cfg)) {
+            String batchId = client.submit(opts);
+            assertEquals("batch-token", batchId);
+        }
+
+        wm.verify(postRequestedFor(urlEqualTo("/api/v1/batches"))
+                .withHeader("Authorization", equalTo("Bearer my-bearer-token")));
+    }
+
+    @Test
+    void passwordTakesPriorityOverToken() throws Exception {
+        wm.stubFor(post(urlEqualTo("/api/v1/batches"))
+                .willReturn(aResponse()
+                        .withStatus(201)
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("{\"id\":\"batch-pw\",\"batchType\":\"PYSPARK\",\"state\":\"PENDING\"}")));
+
+        KyuubiClientConfig cfg = KyuubiClientConfig.builder()
+                .serverUrl("http://localhost:" + wm.port())
+                .username("test")
+                .password("test-password")
+                .token("should-not-be-used")
+                .pollIntervalMs(50)
+                .build();
+
+        SubmitOptions opts = SubmitOptions.builder()
+                .resource("s3a://bucket/job.py")
+                .name("priority-job")
+                .build();
+
+        try (KyuubiClient client = new KyuubiClient(cfg)) {
+            client.submit(opts);
+        }
+
+        // Should use Basic auth (password), not Bearer token
+        wm.verify(postRequestedFor(urlEqualTo("/api/v1/batches"))
+                .withBasicAuth(new com.github.tomakehurst.wiremock.client.BasicCredentials("test", "test-password")));
+    }
+
     // ── BatchState helpers ─────────────────────────────────────────────────────
 
     @Test

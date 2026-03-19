@@ -30,40 +30,56 @@ final class HttpClientFactory {
     private HttpClientFactory() {}
 
     static CloseableHttpClient build(KyuubiClientConfig config) {
-        CredentialsProvider credsProvider = new BasicCredentialsProvider();
-        credsProvider.setCredentials(
-                AuthScope.ANY,
-                new UsernamePasswordCredentials(config.getUsername(), config.getPassword())
-        );
-
-        // Send Basic auth preemptively — Kyuubi rejects without a WWW-Authenticate challenge
-        URI serverUri;
-        try {
-            serverUri = URI.create(config.getServerUrl());
-        } catch (IllegalArgumentException e) {
-            throw new IllegalArgumentException(
-                    "Invalid serverUrl '" + config.getServerUrl() + "': not a valid URI", e);
-        }
-        HttpHost targetHost = new HttpHost(
-                serverUri.getHost(),
-                serverUri.getPort(),
-                serverUri.getScheme()
-        );
-        AuthCache authCache = new BasicAuthCache();
-        authCache.put(targetHost, new BasicScheme());
+        boolean usePassword = config.getPassword() != null;
 
         HttpClientBuilder builder = HttpClients.custom()
-                .setDefaultCredentialsProvider(credsProvider)
-                .addInterceptorFirst((org.apache.http.HttpRequestInterceptor) (request, context) -> {
-                    HttpClientContext clientContext = HttpClientContext.adapt(context);
-                    clientContext.setAuthCache(authCache);
-                })
                 .setDefaultRequestConfig(
                         org.apache.http.client.config.RequestConfig.custom()
                                 .setConnectTimeout(config.getConnectTimeoutMs())
                                 .setSocketTimeout(config.getSocketTimeoutMs())
                                 .build()
                 );
+
+        if (usePassword) {
+            // Password takes priority over token
+            String password = config.getPassword();
+            if (JceksPasswordExtractor.isJceksPath(password)) {
+                password = JceksPasswordExtractor.extract(password, config.getUsername());
+            }
+
+            CredentialsProvider credsProvider = new BasicCredentialsProvider();
+            credsProvider.setCredentials(
+                    AuthScope.ANY,
+                    new UsernamePasswordCredentials(config.getUsername(), password)
+            );
+
+            // Send Basic auth preemptively — Kyuubi rejects without a WWW-Authenticate challenge
+            URI serverUri;
+            try {
+                serverUri = URI.create(config.getServerUrl());
+            } catch (IllegalArgumentException e) {
+                throw new IllegalArgumentException(
+                        "Invalid serverUrl '" + config.getServerUrl() + "': not a valid URI", e);
+            }
+            HttpHost targetHost = new HttpHost(
+                    serverUri.getHost(),
+                    serverUri.getPort(),
+                    serverUri.getScheme()
+            );
+            AuthCache authCache = new BasicAuthCache();
+            authCache.put(targetHost, new BasicScheme());
+
+            builder.setDefaultCredentialsProvider(credsProvider)
+                    .addInterceptorFirst((org.apache.http.HttpRequestInterceptor) (request, context) -> {
+                        HttpClientContext clientContext = HttpClientContext.adapt(context);
+                        clientContext.setAuthCache(authCache);
+                    });
+        } else {
+            // Bearer token authentication
+            String token = config.getToken();
+            builder.addInterceptorFirst((org.apache.http.HttpRequestInterceptor) (request, context) ->
+                    request.setHeader("Authorization", "Bearer " + token));
+        }
 
         if (config.isSslVerificationDisabled()) {
             try {
