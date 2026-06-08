@@ -147,6 +147,26 @@ class KyuubiClientTest {
         assertEquals(List.of("line1", "line2"), captured);
     }
 
+    @Test
+    void monitorReturnsErrorWhenFinishedButAppFailed() throws Exception {
+        wm.stubFor(get(urlEqualTo("/api/v1/batches/batch-006"))
+                .willReturn(okJson("{\"id\":\"batch-006\",\"state\":\"FINISHED\",\"appState\":\"FAILED\"}")));
+
+        try (KyuubiClient client = newClient()) {
+            assertEquals(BatchState.ERROR, client.monitor("batch-006"));
+        }
+    }
+
+    @Test
+    void monitorReturnsUnknownWhenFinishedButNoAppState() throws Exception {
+        wm.stubFor(get(urlEqualTo("/api/v1/batches/batch-007"))
+                .willReturn(okJson("{\"id\":\"batch-007\",\"state\":\"FINISHED\"}")));
+
+        try (KyuubiClient client = newClient()) {
+            assertEquals(BatchState.UNKNOWN, client.monitor("batch-007"));
+        }
+    }
+
     // ── cancel ─────────────────────────────────────────────────────────────────
 
     @Test
