@@ -48,6 +48,9 @@ public class KyuubiClient implements Closeable {
     /** Python / zip / egg file extensions that imply a PYSPARK batch type. */
     private static final Set<String> PYTHON_EXTENSIONS = Set.of(".py", ".zip", ".egg");
 
+    /** Application-level states that confirm the Spark job genuinely succeeded. */
+    private static final Set<String> SUCCESS_APP_STATES = Set.of("FINISHED", "SUCCEEDED", "SUCCESS");
+
     private final KyuubiClientConfig config;
     private final KyuubiRestClient   rest;
     private final PathClassifier     classifier;
@@ -139,6 +142,14 @@ public class KyuubiClient implements Closeable {
     /**
      * Block until the batch reaches a terminal state.
      *
+     * <p>The returned state reflects the <em>application</em> outcome, not merely
+     * the batch lifecycle: a batch that reaches {@code FINISHED} is only returned
+     * as {@link BatchState#FINISHED} when the Spark application state explicitly
+     * confirms success. A finished batch whose {@code appState} reports a failure
+     * is returned as {@link BatchState#ERROR}, and one with no {@code appState}
+     * (success unconfirmable) is returned as {@link BatchState#UNKNOWN}. This means
+     * {@code monitor(id) == BatchState.FINISHED} is a safe success check.
+     *
      * @param batchId     the batch to monitor
      * @param logConsumer optional callback invoked with each log line once the
      *                    job finishes; pass {@code null} to skip log retrieval
@@ -200,6 +211,19 @@ public class KyuubiClient implements Closeable {
 
                 if (logConsumer != null) {
                     fetchAndStreamLogs(batchId, logConsumer);
+                }
+
+                // Batch FINISHED != Spark success: downgrade unless appState confirms it,
+                // so a caller checking for FINISHED can't mistake a failed job for success.
+                if (state == BatchState.FINISHED && !isAppSuccess(appState)) {
+                    if (appState == null || appState.isBlank()) {
+                        log.error("Batch reached FINISHED but Kyuubi reported no application "
+                                + "state (appState) — cannot confirm the Spark job succeeded");
+                        return BatchState.UNKNOWN;
+                    }
+                    log.error("Batch reached FINISHED but Spark application state is '{}' "
+                            + "— treating as failure", appState);
+                    return BatchState.ERROR;
                 }
 
                 return state;
@@ -277,6 +301,11 @@ public class KyuubiClient implements Closeable {
     }
 
     // ── Internal helpers ──────────────────────────────────────────────────────
+
+    /** True only when appState explicitly confirms success; null/blank counts as not-success. */
+    private static boolean isAppSuccess(String appState) {
+        return appState != null && SUCCESS_APP_STATES.contains(appState.trim().toUpperCase());
+    }
 
     private boolean isPythonResource(String resource) {
         String lower = resource.toLowerCase();

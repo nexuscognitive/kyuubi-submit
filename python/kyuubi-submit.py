@@ -460,8 +460,6 @@ class KyuubiBatchSubmitter:
                         elapsed_min = elapsed // 60
                         elapsed_sec = elapsed % 60
                         self.logger.info(f"Job completed in {elapsed_min}m {elapsed_sec}s")
-                        if app_state:
-                            self.logger.info(f"Final application state: {app_state}")
                         app_diagnostic = status.get('appDiagnostic', '')
                         if app_diagnostic:
                             self.logger.info(f"Application diagnostics: {app_diagnostic}")
@@ -469,7 +467,17 @@ class KyuubiBatchSubmitter:
                             self.print_all_logs(batch_id)
                         else:
                             self.logger.info("Logs available but not displayed (use --show-logs to see them)")
-                        return app_state if app_state else state
+
+                        # Batch FINISHED != Spark success: require an explicit appState
+                        # rather than falling back to the batch state.
+                        if not app_state:
+                            self.logger.error(
+                                "Batch reached FINISHED but Kyuubi reported no application "
+                                "state (appState) - cannot confirm the Spark job succeeded"
+                            )
+                            return 'UNKNOWN'
+                        self.logger.info(f"Final application state: {app_state}")
+                        return app_state
                     
                     elif state in ['ERROR', 'CANCELLED']:
                         sys.stdout.write('\r' + ' '*80 + '\r')
