@@ -461,6 +461,7 @@ class KyuubiBatchSubmitter:
                         elapsed_sec = elapsed % 60
                         self.logger.info(f"Job completed in {elapsed_min}m {elapsed_sec}s")
                         app_diagnostic = status.get('appDiagnostic', '')
+                        self.logger.info(f"Spark driver pod: kyuubi-spark-{batch_id}-driver")
                         if app_diagnostic:
                             self.logger.info(f"Application diagnostics: {app_diagnostic}")
                         if show_logs:
@@ -483,6 +484,7 @@ class KyuubiBatchSubmitter:
                         sys.stdout.write('\r' + ' '*80 + '\r')
                         self.logger.error(f"Batch terminated with state: {state}")
                         app_diagnostic = status.get('appDiagnostic', '')
+                        self.logger.error(f"Spark driver pod: kyuubi-spark-{batch_id}-driver")
                         if app_diagnostic:
                             self.logger.error(f"Application diagnostics: {app_diagnostic}")
                         if show_logs:
