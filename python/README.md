@@ -149,17 +149,6 @@ In this example:
 - `config.json` → uploaded to Kyuubi
 - `s3a://bucket/data.csv` → passed to Spark as-is
 
-> **Limitation — remote resource + local extra files.** You cannot upload local
-> `--files`/`--jars`/`--pyfiles` while `--resource` is a **remote** URI. That
-> combination produces a multipart request with no main resource file, which
-> trips a Kyuubi **server-side** bug: its upload endpoint calls
-> `ContentDisposition.getFileName()` on the absent resource part and throws a
-> `NullPointerException`, surfacing as an opaque `Failed to submit batch: 500`.
-> The client rejects this combination up front with a clear error. To work around
-> it, either pass a **local** path for `--resource` (so it is uploaded alongside
-> the files) or stage the extra files to S3/HDFS and pass them as remote URIs.
-> This is a Kyuubi server defect tracked separately (NX-2454).
-
 ## Configuration
 
 ### Command Line Options

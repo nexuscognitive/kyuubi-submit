@@ -198,28 +198,7 @@ class KyuubiBatchSubmitter:
         
         # Check if we need multipart upload
         has_local_files = resource_is_local or local_py_files or local_jars or local_files
-
-        # Guard against an unsupported combination: a remote --resource together with
-        # local extra files. That forces a multipart upload with NO resourceFile part,
-        # which trips a Kyuubi server bug — the multipart endpoint calls
-        # ContentDisposition.getFileName() on the (absent) resourceFile part and throws
-        # a NullPointerException, surfacing as an opaque "Failed to submit batch: 500".
-        # Fail fast with actionable guidance instead of hitting that crash.
-        if not resource_is_local and (local_py_files or local_jars or local_files):
-            offending = [orig for orig, _ in local_py_files + local_jars + local_files]
-            raise ValueError(
-                "Cannot upload local files when --resource is a remote URI "
-                f"({resource}).\n"
-                "Kyuubi only accepts uploaded extra files when the main resource is "
-                "also uploaded; submitting local files without a local resource triggers "
-                "a server-side error (HTTP 500, ContentDisposition.getFileName()).\n"
-                f"Local files that cannot be uploaded here: {', '.join(offending)}\n"
-                "Resolve by either:\n"
-                "  1. Passing a local path for --resource so it is uploaded with the files, or\n"
-                "  2. Staging these files to S3/HDFS and passing them as remote URIs "
-                "(s3a://, hdfs://, ...), which submits the job without any file upload."
-            )
-
+        
         # Build batch request object
         batch_request = {
             "batchType": batch_type,
