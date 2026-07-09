@@ -233,24 +233,13 @@ SubmitOptions opts = SubmitOptions.builder()
 
 ```java
 SubmitOptions opts = SubmitOptions.builder()
-    .resource("/tmp/build/job.py")                   // LOCAL main script → uploaded
+    .resource("s3a://nx1-jobs/etl/job.py")           // remote main script
     .pyFile("/tmp/build/hot_fix.zip")                // LOCAL patch → uploaded
     .pyFile("s3a://nx1-libs/python/base_utils.zip")  // remote dep → conf only
     .jar("hdfs://nn/apps/jars/connector-3.1.jar")    // remote jar → conf only
     .name("patched-etl")
     .build();
 ```
-
-> **Limitation — remote resource + local extra files.** You cannot upload local
-> `pyFile`/`jar`/`file` entries while the main `resource` is a **remote** URI
-> (above, the resource is local for exactly this reason). That combination produces
-> a multipart request with no main resource file, which trips a Kyuubi
-> **server-side** bug: its upload endpoint calls `ContentDisposition.getFileName()`
-> on the absent resource part and throws a `NullPointerException`, surfacing as an
-> opaque HTTP 500. The client rejects this combination up front with a clear error.
-> To work around it, either pass a **local** path for `resource` (so it is uploaded
-> alongside the files) or stage the extra files to S3/HDFS and pass them as remote
-> URIs. This is a Kyuubi server defect tracked separately (NX-2454).
 
 Path classification rules (mirrors the original Python logic):
 

@@ -87,30 +87,6 @@ public class KyuubiClient implements Closeable {
         PathClassifier.Classification jarClassified = classifier.classify(options.getJars());
         PathClassifier.Classification fileClassified= classifier.classify(options.getFiles());
 
-        // Guard against an unsupported combination: a remote resource together with
-        // local extra files. That forces a multipart upload with NO resourceFile part,
-        // which trips a Kyuubi server bug — the multipart endpoint calls
-        // ContentDisposition.getFileName() on the (absent) resourceFile part and throws
-        // a NullPointerException, surfacing as an opaque HTTP 500. Fail fast instead.
-        if (!resourceIsLocal
-                && (!pyClassified.localFiles.isEmpty()
-                || !jarClassified.localFiles.isEmpty()
-                || !fileClassified.localFiles.isEmpty())) {
-            List<String> offending = new java.util.ArrayList<>();
-            pyClassified.localFiles.forEach(lf -> offending.add(lf.original()));
-            jarClassified.localFiles.forEach(lf -> offending.add(lf.original()));
-            fileClassified.localFiles.forEach(lf -> offending.add(lf.original()));
-            throw new IllegalArgumentException(
-                    "Cannot upload local files when the resource is a remote URI (" + resource + "). "
-                    + "Kyuubi only accepts uploaded extra files when the main resource is also "
-                    + "uploaded; submitting local files without a local resource triggers a "
-                    + "server-side error (HTTP 500, ContentDisposition.getFileName()). "
-                    + "Local files that cannot be uploaded here: " + String.join(", ", offending) + ". "
-                    + "Resolve by either (1) passing a local path for the resource so it is uploaded "
-                    + "with the files, or (2) staging these files to S3/HDFS and passing them as remote "
-                    + "URIs (s3a://, hdfs://, ...), which submits the job without any file upload.");
-        }
-
         // Build the Spark conf map
         Map<String, String> conf = buildConf(options, pyClassified, jarClassified, fileClassified);
 
