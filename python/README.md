@@ -180,7 +180,8 @@ In this example:
 | `--files`          | No       | Files to distribute (comma-separated, local or remote) |
 | `--queue`          | No       | YuniKorn queue name                                    |
 | `--history-server` | No       | Spark History Server URL                               |
-| `--show-logs`      | No       | Display logs after completion                          |
+| `--show-logs`      | No       | Display the Kyuubi submission log after completion      |
+| `--driver-logs`    | No       | Display the Spark driver logs (application output) after completion |
 | `--debug`          | No       | Enable debug logging                                   |
 | `--config-file`    | No       | YAML configuration file                                |
 
