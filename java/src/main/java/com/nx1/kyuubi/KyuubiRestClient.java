@@ -145,9 +145,19 @@ class KyuubiRestClient implements Closeable {
      * @param size  max lines to return
      */
     BatchLogResponse getBatchLogs(String batchId, int from, int size) throws IOException {
+        return getBatchLogs(batchId, from, size, "localLog");
+    }
+
+    /**
+     * Retrieve a page of log lines from the given endpoint.
+     *
+     * @param logType {@code "localLog"} (Kyuubi submission log) or
+     *                {@code "driverLog"} (Spark driver / application log)
+     */
+    BatchLogResponse getBatchLogs(String batchId, int from, int size, String logType) throws IOException {
         URI uri;
         try {
-            uri = new URIBuilder(baseUrl + "/api/v1/batches/" + batchId + "/localLog")
+            uri = new URIBuilder(baseUrl + "/api/v1/batches/" + batchId + "/" + logType)
                     .addParameter("from", String.valueOf(from))
                     .addParameter("size", String.valueOf(size))
                     .build();

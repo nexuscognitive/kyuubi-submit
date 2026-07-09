@@ -288,6 +288,17 @@ public class KyuubiClient implements Closeable {
         fetchAndStreamLogs(batchId, consumer);
     }
 
+    /**
+     * Stream the Spark <em>driver</em> logs (application output) to the given consumer.
+     *
+     * <p>This reads the {@code driverLog} endpoint, which surfaces the driver's own
+     * output (the application logs), as opposed to {@link #streamLogs} which returns
+     * Kyuubi's submission-side log.
+     */
+    public void streamDriverLogs(String batchId, LogConsumer consumer) throws IOException {
+        fetchAndStreamDriverLogs(batchId, consumer);
+    }
+
     // ── Convenience methods ────────────────────────────────────────────────────
 
     /**
@@ -417,6 +428,51 @@ public class KyuubiClient implements Closeable {
             from += rows.size();
         }
         log.info("Retrieved {} log lines", printed);
+    }
+
+    /** Safety bound for driverLog paging: never stream more than this many lines. */
+    private static final int DRIVER_LOG_MAX_LINES = 1_000_000;
+
+    /**
+     * Page through the driverLog endpoint. Unlike localLog it returns no reliable
+     * {@code total}, so termination relies on three guards: a short/empty page marks
+     * the end; a page identical to the previous one means the server is not honouring
+     * the {@code from} offset (stop rather than loop); and a hard line cap bounds
+     * output in any case.
+     */
+    private void fetchAndStreamDriverLogs(String batchId, LogConsumer consumer) throws IOException {
+        log.info("Retrieving Spark driver logs for batch {}", batchId);
+        int from    = 0;
+        int size    = 1000;
+        int printed = 0;
+        List<String> prevRows = null;
+
+        while (true) {
+            BatchLogResponse logResp = rest.getBatchLogs(batchId, from, size, "driverLog");
+            List<String> rows = logResp.getLogRowSet();
+            if (rows == null || rows.isEmpty()) break;
+
+            // Server ignored 'from' and returned the same page again → no progress.
+            if (rows.equals(prevRows)) {
+                log.warn("Driver log pagination did not advance (server may not support "
+                        + "paging); stopping to avoid a loop");
+                break;
+            }
+            prevRows = rows;
+
+            boolean truncated = false;
+            for (String line : rows) {
+                consumer.accept(line);
+                if (++printed >= DRIVER_LOG_MAX_LINES) { truncated = true; break; }
+            }
+            if (truncated) {
+                log.warn("Driver log output truncated at {} lines", DRIVER_LOG_MAX_LINES);
+                break;
+            }
+            if (rows.size() < size) break;   // short page = last page
+            from += rows.size();
+        }
+        log.info("Retrieved {} driver log lines", printed);
     }
 
     private String formatHistoryUrl(String appId) {
