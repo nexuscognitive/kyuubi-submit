@@ -581,19 +581,45 @@ def load_yaml_config(config_file):
         return yaml.safe_load(f)
 
 
+def normalize_conf(conf):
+    """Flatten a conf value into a list of 'key=value' strings.
+    Accepts a dict, a list of 'key=value' strings, or a comma-separated string.
+    """
+    if not conf:
+        return []
+    if isinstance(conf, dict):
+        return [f"{k}={v}" for k, v in conf.items()]
+    entries = [conf] if isinstance(conf, str) else conf
+    items = []
+    for entry in entries:
+        if isinstance(entry, dict):
+            items.extend(f"{k}={v}" for k, v in entry.items())
+        else:
+            items.extend(str(entry).split(','))
+    return [item.strip() for item in items if item.strip()]
+
+
 def merge_configs(yaml_config, cli_args):
-    """Merge YAML config with CLI arguments. CLI arguments take precedence."""
+    """Merge YAML config with CLI arguments. CLI arguments take precedence.
+
+    'conf' is the exception: instead of replacing the YAML Spark configs, CLI
+    --conf entries are appended after them, so only the keys named on the CLI
+    are overridden (parse_conf applies last-one-wins) and the rest survive.
+    """
     merged = {}
     if yaml_config:
         merged = yaml_config.copy()
     cli_dict = vars(cli_args)
     for key, value in cli_dict.items():
-        if value is not None and key not in ['config_file', 'func']:
+        if value is not None and key not in ['config_file', 'func', 'conf']:
             if isinstance(value, bool):
                 if value or key not in merged:
                     merged[key] = value
             else:
                 merged[key] = value
+    conf = normalize_conf(merged.get('conf')) + normalize_conf(cli_dict.get('conf'))
+    if conf:
+        merged['conf'] = conf
     return merged
 
 
