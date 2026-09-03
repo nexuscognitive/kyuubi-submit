@@ -35,6 +35,14 @@ public final class KyuubiClientConfig {
     /** Whether to skip TLS certificate verification (useful in dev/test). */
     private final boolean sslVerificationDisabled;
 
+    /**
+     * Number of driver log lines requested from the {@code driverLog} endpoint.
+     * The server returns the <em>last</em> N lines (like {@code kubectl logs --tail=N})
+     * and ignores the {@code from} offset, so this value decides how much of the
+     * driver log is visible.
+     */
+    private final int driverLogLines;
+
     private KyuubiClientConfig(Builder b) {
         this.serverUrl               = Objects.requireNonNull(b.serverUrl,  "serverUrl must not be null");
         this.username                = Objects.requireNonNull(b.username,   "username must not be null");
@@ -48,6 +56,10 @@ public final class KyuubiClientConfig {
         this.connectTimeoutMs        = b.connectTimeoutMs;
         this.socketTimeoutMs         = b.socketTimeoutMs;
         this.sslVerificationDisabled = b.sslVerificationDisabled;
+        if (b.driverLogLines <= 0) {
+            throw new IllegalArgumentException("driverLogLines must be positive");
+        }
+        this.driverLogLines          = b.driverLogLines;
     }
 
     public String getServerUrl()            { return serverUrl; }
@@ -59,6 +71,7 @@ public final class KyuubiClientConfig {
     public int    getConnectTimeoutMs()     { return connectTimeoutMs; }
     public int    getSocketTimeoutMs()      { return socketTimeoutMs; }
     public boolean isSslVerificationDisabled() { return sslVerificationDisabled; }
+    public int    getDriverLogLines()       { return driverLogLines; }
 
     // ── Builder ────────────────────────────────────────────────────────────────
 
@@ -75,6 +88,7 @@ public final class KyuubiClientConfig {
         private int     connectTimeoutMs        = 30_000;
         private int     socketTimeoutMs         = 60_000;
         private boolean sslVerificationDisabled = false;
+        private int     driverLogLines          = 100_000;
 
         /** Base URL of the Kyuubi REST server, e.g. {@code https://kyuubi:10099}. */
         public Builder serverUrl(String url) {
@@ -132,6 +146,15 @@ public final class KyuubiClientConfig {
          */
         public Builder disableSslVerification() {
             this.sslVerificationDisabled = true;
+            return this;
+        }
+
+        /**
+         * Maximum number of Spark driver log lines to fetch (default: 100 000).
+         * The server returns the last N lines, so raise this to see more of a long log.
+         */
+        public Builder driverLogLines(int lines) {
+            this.driverLogLines = lines;
             return this;
         }
 

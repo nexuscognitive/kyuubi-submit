@@ -645,6 +645,7 @@ System.out.println("Diagnostics: " + status.getAppDiagnostic());
 | `connectTimeoutMs(int)` | optional | `30000` | HTTP connect timeout (ms) |
 | `socketTimeoutMs(int)` | optional | `60000` | HTTP socket/read timeout (ms) |
 | `disableSslVerification()` | optional | `false` | Skip TLS cert verification. **Dev only.** |
+| `driverLogLines(int)` | optional | `100000` | Max Spark driver log lines to fetch. The server returns the *last* N lines, so raise this for very long logs |
 
 ### `SubmitOptions.Builder`
 

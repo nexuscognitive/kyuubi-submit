@@ -415,11 +415,15 @@ public class KyuubiClient implements Closeable {
      * the end; a page identical to the previous one means the server is not honouring
      * the {@code from} offset (stop rather than loop); and a hard line cap bounds
      * output in any case.
+     *
+     * <p>Because the server returns the <em>last</em> {@code size} lines, the page size
+     * ({@link KyuubiClientConfig#getDriverLogLines()}) effectively decides how much of
+     * the driver log is shown.
      */
     private void fetchAndStreamDriverLogs(String batchId, LogConsumer consumer) throws IOException {
         log.info("Retrieving Spark driver logs for batch {}", batchId);
         int from    = 0;
-        int size    = 1000;
+        int size    = Math.min(config.getDriverLogLines(), DRIVER_LOG_MAX_LINES);
         int printed = 0;
         List<String> prevRows = null;
 
@@ -430,8 +434,9 @@ public class KyuubiClient implements Closeable {
 
             // Server ignored 'from' and returned the same page again → no progress.
             if (rows.equals(prevRows)) {
-                log.warn("Driver log pagination did not advance (server may not support "
-                        + "paging); stopping to avoid a loop");
+                log.warn("Driver log pagination did not advance (server returns only the last {} "
+                        + "lines); stopping to avoid a loop. Earlier lines may be missing - "
+                        + "raise driverLogLines to see more", size);
                 break;
             }
             prevRows = rows;

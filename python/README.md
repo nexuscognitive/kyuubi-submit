@@ -171,6 +171,7 @@ In this example:
 | `--history-server` | No       | Spark History Server URL                               |
 | `--show-logs`      | No       | Display the Kyuubi submission log after completion      |
 | `--driver-logs`    | No       | Display the Spark driver logs (application output) after completion |
+| `--driver-log-lines` | No     | Max driver log lines to fetch (default `100000`). The server returns the *last* N lines, so raise this for very long logs |
 | `--debug`          | No       | Enable debug logging                                   |
 | `--config-file`    | No       | YAML configuration file                                |
 

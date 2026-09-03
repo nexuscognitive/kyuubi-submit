@@ -44,11 +44,14 @@ class KyuubiBatchSubmitter:
     # Python file extensions
     PYTHON_EXTENSIONS = {'.py', '.zip', '.egg'}
     
-    def __init__(self, server, username, password, logger, history_server=None, token=None):
+    def __init__(self, server, username, password, logger, history_server=None, token=None,
+                 driver_log_lines=None):
         self.server = server
         self.username = username
         self.password = password
         self.logger = logger
+        # Driver log lines requested per page (the server returns the *last* N lines).
+        self.driver_log_lines = driver_log_lines or self.DRIVER_LOG_PAGE_SIZE
         self.history_server = history_server
         self.session = requests.Session()
         if password:
@@ -424,6 +427,12 @@ class KyuubiBatchSubmitter:
     # honour the 'from' offset can never cause an unbounded loop.
     DRIVER_LOG_MAX_LINES = 1_000_000
 
+    # Default number of driver log lines requested per page. The Kyuubi driverLog
+    # endpoint behaves like `kubectl logs --tail=N`: it returns the *last* 'size'
+    # lines and ignores 'from', so paging cannot recover earlier lines. The only way
+    # to see more of the log is to ask for a bigger page up front.
+    DRIVER_LOG_PAGE_SIZE = 100_000
+
     def print_all_driver_logs(self, batch_id):
         """Retrieve and print the Spark driver logs (application output).
 
@@ -433,11 +442,15 @@ class KyuubiBatchSubmitter:
           2. a page identical to the previous one means the server is not honouring
              the 'from' offset (no progress) - stop rather than loop forever;
           3. a hard DRIVER_LOG_MAX_LINES cap bounds output in any case.
+
+        Because the server returns the *last* 'size' lines, the page size (see
+        --driver-log-lines / DRIVER_LOG_PAGE_SIZE) effectively decides how much of
+        the driver log is shown.
         """
         self.logger.info("Retrieving Spark driver logs...")
 
         from_index = 0
-        size = 1000
+        size = min(self.driver_log_lines, self.DRIVER_LOG_MAX_LINES)
         total_printed = 0
         printed_header = False
         prev_rows = None
@@ -454,8 +467,9 @@ class KyuubiBatchSubmitter:
             # Guard 2: server ignored 'from' and returned the same page again.
             if prev_rows is not None and log_rows == prev_rows:
                 self.logger.warning(
-                    "Driver log pagination did not advance (server may not support "
-                    "paging); stopping to avoid a loop."
+                    "Driver log pagination did not advance (server returns only the last "
+                    f"{size} lines); stopping to avoid a loop. Earlier lines may be "
+                    "missing - increase --driver-log-lines to see more."
                 )
                 break
             prev_rows = log_rows
@@ -711,6 +725,7 @@ def main():
     parser.add_argument('--files', help='Comma-separated files to distribute (local files will be auto-uploaded)')
     parser.add_argument('--show-logs', action='store_true', help='Display job logs (Kyuubi submission log) after completion')
     parser.add_argument('--driver-logs', action='store_true', help='Display Spark driver logs (application output) after completion')
+    parser.add_argument('--driver-log-lines', type=int, default=argparse.SUPPRESS, help=f'Max driver log lines to fetch (server returns the last N lines; default {KyuubiBatchSubmitter.DRIVER_LOG_PAGE_SIZE})')
     parser.add_argument('--debug', action='store_true', help='Enable debug logging')
     
     args = parser.parse_args()
@@ -752,7 +767,8 @@ def main():
         password,
         logger,
         config.get('history_server'),
-        token=token if not password else None
+        token=token if not password else None,
+        driver_log_lines=config.get('driver_log_lines')
     )
     
     # Store submitter globally for signal handler
