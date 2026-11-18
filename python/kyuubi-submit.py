@@ -108,18 +108,24 @@ class KyuubiBatchSubmitter:
     
     def parse_conf(self, conf):
         """Parse Spark configs into a dictionary.
-        Accepts: a list of 'key=value' strings, or a single comma-separated string.
+        Accepts a list of 'key=value' strings or a single string. An entry
+        is split on comma only when every comma-separated piece itself looks
+        like 'key=value' -- that preserves the documented legacy form
+        '--conf "k1=v1,k2=v2"'. Otherwise the entry is kept whole, so values
+        that legitimately contain commas (e.g. 'mongodb,org.neo4j.spark.' for
+        excluded.catalogs, or 'a.jar,b.jar' for spark.jars) survive intact.
         """
         conf_dict = {}
         if not conf:
             return conf_dict
+        entries = [conf] if isinstance(conf, str) else conf
         items = []
-        if isinstance(conf, list):
-            # Each element may itself be comma-separated
-            for entry in conf:
-                items.extend(entry.split(','))
-        else:
-            items = conf.split(',')
+        for entry in entries:
+            parts = entry.split(',')
+            if len(parts) > 1 and all('=' in p for p in parts):
+                items.extend(parts)
+            else:
+                items.append(entry)
         for item in items:
             item = item.strip()
             if '=' in item:
@@ -597,7 +603,12 @@ def load_yaml_config(config_file):
 
 def normalize_conf(conf):
     """Flatten a conf value into a list of 'key=value' strings.
-    Accepts a dict, a list of 'key=value' strings, or a comma-separated string.
+    Accepts a dict, a list of 'key=value' strings, or a single string. An
+    entry is split on comma only when every comma-separated piece itself
+    looks like 'key=value' (preserves the documented legacy form
+    '--conf "k1=v1,k2=v2"'). Otherwise the entry is kept whole, so values
+    with legitimate commas (e.g. 'mongodb,org.neo4j.spark.' for
+    excluded.catalogs) survive the CLI/YAML merge.
     """
     if not conf:
         return []
@@ -609,7 +620,12 @@ def normalize_conf(conf):
         if isinstance(entry, dict):
             items.extend(f"{k}={v}" for k, v in entry.items())
         else:
-            items.extend(str(entry).split(','))
+            entry = str(entry)
+            parts = entry.split(',')
+            if len(parts) > 1 and all('=' in p for p in parts):
+                items.extend(parts)
+            else:
+                items.append(entry)
     return [item.strip() for item in items if item.strip()]
 
 
