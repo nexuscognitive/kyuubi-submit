@@ -3,6 +3,7 @@
 import argparse
 import requests
 import json
+import re
 import time
 import getpass
 import logging
@@ -13,6 +14,13 @@ import signal
 import shlex
 from urllib.parse import urljoin, urlparse
 from datetime import datetime
+
+# Match a comma that is immediately followed by what looks like a Spark conf
+# key followed by '=' (e.g. ",spark.executor.memory=" or ",k=").  Used to
+# split a single --conf string into individual k=v entries while preserving
+# commas that are part of a legitimate value (e.g. "mongodb,org.neo4j.spark."
+# or "a.jar,b.jar"), which do not start with a 'key=' pattern.
+_CONF_SPLIT_RE = re.compile(r',(?=[a-zA-Z_][a-zA-Z0-9._-]*=)')
 
 # Disable SSL warnings
 import urllib3
@@ -108,29 +116,23 @@ class KyuubiBatchSubmitter:
     
     def parse_conf(self, conf):
         """Parse Spark configs into a dictionary.
-        Accepts a list of 'key=value' strings or a single string. An entry
-        is split on comma only when every comma-separated piece itself looks
-        like 'key=value' -- that preserves the documented legacy form
-        '--conf "k1=v1,k2=v2"'. Otherwise the entry is kept whole, so values
-        that legitimately contain commas (e.g. 'mongodb,org.neo4j.spark.' for
-        excluded.catalogs, or 'a.jar,b.jar' for spark.jars) survive intact.
+        Accepts a list of 'key=value' strings or a single string. Each entry
+        is split on commas only at positions immediately followed by a new
+        'key=' prefix -- so legacy '--conf "k1=v1,k2=v2"' splits into two
+        pairs while comma-bearing single values ('mongodb,org.neo4j.spark.'
+        for excluded.catalogs, 'a.jar,b.jar' for spark.jars) survive intact
+        even when callers pack several configs into one --conf flag.
         """
         conf_dict = {}
         if not conf:
             return conf_dict
         entries = [conf] if isinstance(conf, str) else conf
-        items = []
         for entry in entries:
-            parts = entry.split(',')
-            if len(parts) > 1 and all('=' in p for p in parts):
-                items.extend(parts)
-            else:
-                items.append(entry)
-        for item in items:
-            item = item.strip()
-            if '=' in item:
-                key, value = item.split('=', 1)
-                conf_dict[key.strip()] = value.strip()
+            for item in _CONF_SPLIT_RE.split(entry):
+                item = item.strip()
+                if '=' in item:
+                    key, value = item.split('=', 1)
+                    conf_dict[key.strip()] = value.strip()
         return conf_dict
     
     def format_history_url(self, app_id):
@@ -603,12 +605,12 @@ def load_yaml_config(config_file):
 
 def normalize_conf(conf):
     """Flatten a conf value into a list of 'key=value' strings.
-    Accepts a dict, a list of 'key=value' strings, or a single string. An
-    entry is split on comma only when every comma-separated piece itself
-    looks like 'key=value' (preserves the documented legacy form
-    '--conf "k1=v1,k2=v2"'). Otherwise the entry is kept whole, so values
-    with legitimate commas (e.g. 'mongodb,org.neo4j.spark.' for
-    excluded.catalogs) survive the CLI/YAML merge.
+    Accepts a dict, a list of 'key=value' strings, or a single string. Each
+    string entry is split on commas only at positions immediately followed
+    by a new 'key=' prefix -- so legacy '--conf "k1=v1,k2=v2"' and the
+    Scala-caller pattern (one --conf with every config joined by commas)
+    both split cleanly, while comma-bearing values ('mongodb,org.neo4j.spark.'
+    for excluded.catalogs) stay whole.
     """
     if not conf:
         return []
@@ -620,12 +622,7 @@ def normalize_conf(conf):
         if isinstance(entry, dict):
             items.extend(f"{k}={v}" for k, v in entry.items())
         else:
-            entry = str(entry)
-            parts = entry.split(',')
-            if len(parts) > 1 and all('=' in p for p in parts):
-                items.extend(parts)
-            else:
-                items.append(entry)
+            items.extend(_CONF_SPLIT_RE.split(str(entry)))
     return [item.strip() for item in items if item.strip()]
 
 
