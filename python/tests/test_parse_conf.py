@@ -116,6 +116,124 @@ class TestParseConf(unittest.TestCase):
         result = _submitter().parse_conf(["spark.foo.url=https://host/path?a=1&b=2"])
         self.assertEqual(result, {"spark.foo.url": "https://host/path?a=1&b=2"})
 
+    def test_comma_space_separator_between_pairs(self):
+        """Team pattern seen in the wild: --conf 'k1=v1, k2=v2, k3=v3' with
+        a space after each comma. README documents the no-space form, but
+        teams add spaces for readability. Split must tolerate both."""
+        result = _submitter().parse_conf([
+            "spark.sql.debug.maxToStringFields=100000, spark.driver.memory=2g, spark.driver.cores=1"
+        ])
+        self.assertEqual(result, {
+            "spark.sql.debug.maxToStringFields": "100000",
+            "spark.driver.memory": "2g",
+            "spark.driver.cores": "1",
+        })
+
+    def test_empty_value_followed_by_next_key_without_space(self):
+        """A key with empty value followed immediately by ',nextKey=' must
+        produce a pair with empty value, then the next pair. Seen in the
+        wild: 'spark.extraListeners=,spark.ranger.plugin...=mongodb'."""
+        result = _submitter().parse_conf([
+            "spark.extraListeners=,spark.ranger.plugin.spark.authz.excluded.catalogs=mongodb"
+        ])
+        self.assertEqual(result, {
+            "spark.extraListeners": "",
+            "spark.ranger.plugin.spark.authz.excluded.catalogs": "mongodb",
+        })
+
+    def test_value_with_internal_whitespace_and_equals(self):
+        """spark.*.extraJavaOptions values carry multiple space-separated
+        -Dkey=value flags. The internal '=' and spaces must not confuse the
+        splitter; only ',<keyish>=' is a boundary."""
+        result = _submitter().parse_conf([
+            "spark.executor.extraJavaOptions=-Duser.timezone=UTC -Dlog4j2.formatMsgNoLookups=true, spark.driver.memory=2g"
+        ])
+        self.assertEqual(result, {
+            "spark.executor.extraJavaOptions":
+                "-Duser.timezone=UTC -Dlog4j2.formatMsgNoLookups=true",
+            "spark.driver.memory": "2g",
+        })
+
+    def test_real_world_payload_mixed_spacing_and_empty_values(self):
+        """Excerpt from a real --conf payload: comma-space separators, one
+        empty value, trailing mongo catalog. All four keys must land."""
+        payload = (
+            "spark.sql.sources.partitionOverwriteMode=static, "
+            "spark.extraListeners=,"
+            "spark.ranger.plugin.spark.authz.excluded.catalogs=mongodb, "
+            "spark.sql.catalog.mongodb=com.mongodb.spark.sql.connector.MongoTableCatalog"
+        )
+        result = _submitter().parse_conf([payload])
+        self.assertEqual(result, {
+            "spark.sql.sources.partitionOverwriteMode": "static",
+            "spark.extraListeners": "",
+            "spark.ranger.plugin.spark.authz.excluded.catalogs": "mongodb",
+            "spark.sql.catalog.mongodb": "com.mongodb.spark.sql.connector.MongoTableCatalog",
+        })
+
+    def test_full_production_conf_payload_24_pairs(self):
+        """Real production --conf value from a Scala caller's kyuubi-submit
+        invocation. Combines every tricky shape at once: 24 configs in one
+        string, comma-space separators throughout, one empty value
+        ('spark.extraListeners='), two values with internal spaces AND '='
+        (the extraJavaOptions pair), and a negative-signed value
+        ('autoBroadcastJoinThreshold=-1'). All 24 must land intact."""
+        payload = (
+            "spark.sql.debug.maxToStringFields=100000, "
+            "spark.driver.memory=2g, "
+            "spark.driver.cores=1, "
+            "spark.executor.cores=3, "
+            "spark.executor.memory=5g, "
+            "spark.executor.instances=8, "
+            "spark.eventLog.enabled=true, "
+            "spark.serializer=org.apache.spark.serializer.KryoSerializer, "
+            "spark.sql.hive.convertMetastoreParquet=false, "
+            "spark.sql.autoBroadcastJoinThreshold=-1, "
+            "spark.sql.crossJoin.enabled=true, "
+            "spark.executor.extraJavaOptions=-Duser.timezone=UTC -Dlog4j2.formatMsgNoLookups=true, "
+            "spark.driver.extraJavaOptions=-Duser.timezone=UTC -Dlog4j2.formatMsgNoLookups=true -DENV_CTX=nxdev, "
+            "spark.sql.session.timeZone=UTC, "
+            "spark.files.useFetchCache=false, "
+            "spark.port.maxRetries=100, "
+            "spark.sql.hive.caseSensitiveInferenceMode=NEVER_INFER, "
+            "spark.sql.parquet.writeLegacyFormat=true, "
+            "spark.hadoop.hive.exec.dynamic.partition=true, "
+            "spark.hadoop.hive.exec.dynamic.partition.mode=nonstrict, "
+            "spark.sql.sources.partitionOverwriteMode=static, "
+            "spark.extraListeners=,"
+            "spark.ranger.plugin.spark.authz.excluded.catalogs=mongodb, "
+            "spark.sql.catalog.mongodb=com.mongodb.spark.sql.connector.MongoTableCatalog"
+        )
+        result = _submitter().parse_conf([payload])
+        self.assertEqual(result, {
+            "spark.sql.debug.maxToStringFields": "100000",
+            "spark.driver.memory": "2g",
+            "spark.driver.cores": "1",
+            "spark.executor.cores": "3",
+            "spark.executor.memory": "5g",
+            "spark.executor.instances": "8",
+            "spark.eventLog.enabled": "true",
+            "spark.serializer": "org.apache.spark.serializer.KryoSerializer",
+            "spark.sql.hive.convertMetastoreParquet": "false",
+            "spark.sql.autoBroadcastJoinThreshold": "-1",
+            "spark.sql.crossJoin.enabled": "true",
+            "spark.executor.extraJavaOptions":
+                "-Duser.timezone=UTC -Dlog4j2.formatMsgNoLookups=true",
+            "spark.driver.extraJavaOptions":
+                "-Duser.timezone=UTC -Dlog4j2.formatMsgNoLookups=true -DENV_CTX=nxdev",
+            "spark.sql.session.timeZone": "UTC",
+            "spark.files.useFetchCache": "false",
+            "spark.port.maxRetries": "100",
+            "spark.sql.hive.caseSensitiveInferenceMode": "NEVER_INFER",
+            "spark.sql.parquet.writeLegacyFormat": "true",
+            "spark.hadoop.hive.exec.dynamic.partition": "true",
+            "spark.hadoop.hive.exec.dynamic.partition.mode": "nonstrict",
+            "spark.sql.sources.partitionOverwriteMode": "static",
+            "spark.extraListeners": "",
+            "spark.ranger.plugin.spark.authz.excluded.catalogs": "mongodb",
+            "spark.sql.catalog.mongodb": "com.mongodb.spark.sql.connector.MongoTableCatalog",
+        })
+
     def test_whitespace_is_trimmed(self):
         result = _submitter().parse_conf(["  spark.executor.memory = 4g  "])
         self.assertEqual(result, {"spark.executor.memory": "4g"})

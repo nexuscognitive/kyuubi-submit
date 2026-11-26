@@ -15,12 +15,16 @@ import shlex
 from urllib.parse import urljoin, urlparse
 from datetime import datetime
 
-# Match a comma that is immediately followed by what looks like a Spark conf
-# key followed by '=' (e.g. ",spark.executor.memory=" or ",k=").  Used to
-# split a single --conf string into individual k=v entries while preserving
-# commas that are part of a legitimate value (e.g. "mongodb,org.neo4j.spark."
-# or "a.jar,b.jar"), which do not start with a 'key=' pattern.
-_CONF_SPLIT_RE = re.compile(r',(?=[a-zA-Z_][a-zA-Z0-9._-]*=)')
+# Match a comma -- with any whitespace around it -- that is followed by what
+# looks like a Spark conf key followed by '=' (e.g. ",spark.executor.memory=",
+# ", conf.k=", "  ,conf.k=").  Used to split a single --conf string into
+# individual k=v entries while preserving commas that are part of a
+# legitimate value (e.g. "mongodb,org.neo4j.spark." or "a.jar,b.jar"), which
+# are not followed by a 'key=' token.  The whitespace tolerance accommodates
+# teams that write '--conf "k1=v1, k2=v2"' alongside the README's no-space
+# form '--conf "k1=v1,k2=v2"' and values with internal whitespace (e.g. Java
+# options).  Surrounding whitespace is consumed so pieces don't inherit it.
+_CONF_SPLIT_RE = re.compile(r'\s*,\s*(?=[a-zA-Z_][a-zA-Z0-9._-]*=)')
 
 # Disable SSL warnings
 import urllib3
